@@ -27,7 +27,7 @@ pnpm pr snapshot 123   # pull request number or URL
 vp dev
 ```
 
-The CLI writes `apps/web/public/pr.json`. The web app reads that snapshot and shows the pull request summary, changed files, and GitHub checks. This file-based handoff is intentional for the first version. It keeps GitHub credentials out of the browser and leaves room for a local API once review runs need live progress.
+The CLI writes `apps/web/public/pr.json`. The web app reads that snapshot and shows the PR in three tabs: Summary, Timeline, and Code. The snapshot includes comments, reviews, commits, checks, and inline file patches. This file-based handoff keeps GitHub credentials out of the browser and leaves room for a local API once review runs need live progress.
 
 Useful workspace commands:
 

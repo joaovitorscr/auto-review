@@ -9,6 +9,19 @@ export interface PullRequestFile {
   additions: number;
   deletions: number;
   diffUrl?: string;
+  status?: string;
+  patch?: string;
+}
+
+export interface PullRequestActivity {
+  id: string;
+  type: "comment" | "review" | "commit";
+  author: PullRequestAuthor;
+  body: string;
+  state?: string;
+  url?: string;
+  createdAt: string;
+  commitOid?: string;
 }
 
 export interface PullRequestCheck {
@@ -35,5 +48,9 @@ export interface PullRequestSnapshot {
   commits: number;
   files: PullRequestFile[];
   checks: PullRequestCheck[];
+  labels: Array<{ name: string; color: string }>;
+  activity: PullRequestActivity[];
+  createdAt: string;
+  updatedAt: string;
   fetchedAt: string;
 }
