@@ -97,21 +97,32 @@ interface GhApiFile {
   patch?: string;
 }
 
-function actor(author: GhActor | undefined): PullRequestAuthor {
+interface GhApiActivity {
+  node_id: string;
+  user?: {
+    login: string;
+    avatar_url: string;
+  };
+}
+
+function actor(author: GhActor | undefined, exactAvatarUrl?: string): PullRequestAuthor {
   const login = author?.login ?? "ghost";
   return {
     login,
     ...(author?.name ? { name: author.name } : {}),
-    avatarUrl: avatarUrl(login),
+    avatarUrl: exactAvatarUrl ?? avatarUrl(login),
   };
 }
 
-function activityFrom(raw: GhPullRequest): PullRequestActivity[] {
+function activityFrom(
+  raw: GhPullRequest,
+  avatarByActivityId: ReadonlyMap<string, string>,
+): PullRequestActivity[] {
   return [
     ...raw.comments.map((comment) => ({
       id: comment.id,
       type: "comment" as const,
-      author: actor(comment.author),
+      author: actor(comment.author, avatarByActivityId.get(comment.id)),
       body: comment.body,
       url: comment.url,
       createdAt: comment.createdAt,
@@ -119,7 +130,7 @@ function activityFrom(raw: GhPullRequest): PullRequestActivity[] {
     ...raw.reviews.map((review) => ({
       id: review.id,
       type: "review" as const,
-      author: actor(review.author),
+      author: actor(review.author, avatarByActivityId.get(review.id)),
       body: review.body,
       state: review.state,
       createdAt: review.submittedAt,
@@ -154,13 +165,36 @@ async function fetchPullRequest(target?: string): Promise<PullRequestSnapshot> {
   const { stdout } = await exec("gh", args, { maxBuffer: 10 * 1024 * 1024 });
   const raw = JSON.parse(stdout) as GhPullRequest;
   const repository = repositoryName(raw.url);
-  const { stdout: filesStdout } = await exec(
-    "gh",
-    ["api", "--paginate", "--slurp", `repos/${repository}/pulls/${raw.number}/files`],
-    { maxBuffer: 50 * 1024 * 1024 },
-  );
-  const apiFiles = (JSON.parse(filesStdout) as GhApiFile[][]).flat();
+  const [filesResult, commentsResult, reviewsResult] = await Promise.all([
+    exec("gh", ["api", "--paginate", "--slurp", `repos/${repository}/pulls/${raw.number}/files`], {
+      maxBuffer: 50 * 1024 * 1024,
+    }),
+    exec(
+      "gh",
+      ["api", "--paginate", "--slurp", `repos/${repository}/issues/${raw.number}/comments`],
+      {
+        maxBuffer: 50 * 1024 * 1024,
+      },
+    ),
+    exec(
+      "gh",
+      ["api", "--paginate", "--slurp", `repos/${repository}/pulls/${raw.number}/reviews`],
+      {
+        maxBuffer: 50 * 1024 * 1024,
+      },
+    ),
+  ]);
+  const apiFiles = (JSON.parse(filesResult.stdout) as GhApiFile[][]).flat();
   const apiFileByPath = new Map(apiFiles.map((file) => [file.filename, file]));
+  const apiActivity = [
+    ...(JSON.parse(commentsResult.stdout) as GhApiActivity[][]).flat(),
+    ...(JSON.parse(reviewsResult.stdout) as GhApiActivity[][]).flat(),
+  ];
+  const avatarByActivityId = new Map(
+    apiActivity.flatMap((event) =>
+      event.user?.avatar_url ? [[event.node_id, event.user.avatar_url] as const] : [],
+    ),
+  );
   return {
     repository,
     number: raw.number,
@@ -184,7 +218,7 @@ async function fetchPullRequest(target?: string): Promise<PullRequestSnapshot> {
     })),
     checks: raw.statusCheckRollup.map(checkFrom),
     labels: raw.labels,
-    activity: activityFrom(raw),
+    activity: activityFrom(raw, avatarByActivityId),
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
     fetchedAt: new Date().toISOString(),

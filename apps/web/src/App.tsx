@@ -24,8 +24,18 @@ function relativeTime(value: string): string {
 }
 
 function Avatar({ login, url }: { login: string; url?: string }) {
+  const [failed, setFailed] = useState(false);
   const source = url ?? `https://github.com/${encodeURIComponent(login)}.png?size=80`;
-  return <img className="avatar" src={source} alt={`${login}'s avatar`} />;
+  if (failed)
+    return <span className="avatar avatar-fallback">{login.slice(0, 2).toUpperCase()}</span>;
+  return (
+    <img
+      className="avatar"
+      src={source}
+      alt={`${login}'s avatar`}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 function Diff({ file }: { file: PullRequestFile }) {
