@@ -6,7 +6,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { PullRequestCheck, PullRequestSnapshot } from "@auto-review/github";
-import { parseArguments, repositoryName } from "./input.js";
+import { avatarUrl, fileDiffUrl, parseArguments, repositoryName } from "./input.js";
 
 const exec = promisify(execFile);
 const WORKSPACE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -30,7 +30,7 @@ const FIELDS = [
 
 interface GhPullRequest {
   additions: number;
-  author: { login: string; name?: string; avatarUrl: string };
+  author: { login: string; name?: string };
   baseRefName: string;
   body: string;
   changedFiles: number;
@@ -71,14 +71,21 @@ async function fetchPullRequest(target?: string): Promise<PullRequestSnapshot> {
     url: raw.url,
     state: raw.state,
     isDraft: raw.isDraft,
-    author: raw.author,
+    author: {
+      login: raw.author.login,
+      ...(raw.author.name ? { name: raw.author.name } : {}),
+      avatarUrl: avatarUrl(raw.author.login),
+    },
     baseRefName: raw.baseRefName,
     headRefName: raw.headRefName,
     additions: raw.additions,
     deletions: raw.deletions,
     changedFiles: raw.changedFiles,
     commits: raw.commits.length,
-    files: raw.files,
+    files: raw.files.map((file) => ({
+      ...file,
+      diffUrl: fileDiffUrl(raw.url, file.path),
+    })),
     checks: raw.statusCheckRollup.map(checkFrom),
     fetchedAt: new Date().toISOString(),
   };
