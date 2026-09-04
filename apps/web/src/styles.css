@@ -278,6 +278,84 @@ code,
   padding: 6px 9px;
   border: 1px solid #292c2c;
 }
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 22px;
+}
+.markdown-body li + li {
+  margin-top: 4px;
+}
+.markdown-body input[type="checkbox"] {
+  margin-right: 7px;
+  accent-color: #4bc99a;
+}
+.markdown-body hr {
+  height: 1px;
+  margin: 18px 0;
+  border: 0;
+  background: #292c2c;
+}
+.markdown-alert {
+  margin: 12px 0;
+  padding: 2px 0 2px 14px;
+  border-left: 2px solid #4c8ed8;
+}
+.markdown-alert .alert-title {
+  display: block;
+  margin: 7px 0;
+  color: #58a6ff;
+  font-size: 12px;
+}
+.markdown-alert.tip {
+  border-color: #3fb950;
+}
+.markdown-alert.tip .alert-title {
+  color: #56d364;
+}
+.markdown-alert.important {
+  border-color: #a371f7;
+}
+.markdown-alert.important .alert-title {
+  color: #bc8cff;
+}
+.markdown-alert.warning {
+  border-color: #d29922;
+}
+.markdown-alert.warning .alert-title {
+  color: #e3b341;
+}
+.markdown-alert.caution {
+  border-color: #f85149;
+}
+.markdown-alert.caution .alert-title {
+  color: #ff7b72;
+}
+.markdown-details {
+  margin: 9px 0;
+  border-block: 1px solid #272a2a;
+}
+.markdown-details > summary {
+  padding: 9px 3px;
+  color: #d2d4d4;
+  cursor: pointer;
+  font-weight: 600;
+  list-style-position: inside;
+}
+.markdown-details[open] > summary {
+  border-bottom: 1px solid #202222;
+}
+.markdown-details > :not(summary) {
+  margin-inline: 20px;
+}
+.summary-comments {
+  display: grid;
+  gap: 12px;
+}
+.summary-comments:empty::after {
+  color: #6f7474;
+  font-size: 12px;
+  content: "No comments yet.";
+}
 .markdown-body.compact {
   margin-top: 9px;
   color: #a5a9a9;

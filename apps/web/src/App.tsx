@@ -4,8 +4,8 @@ import type {
   PullRequestFile,
   PullRequestSnapshot,
 } from "@auto-review/github";
-import Markdown from "react-markdown";
 import { checkTone } from "./checks";
+import { MarkdownBody, visibleMarkdown } from "./MarkdownBody";
 
 type Tab = "summary" | "timeline" | "code";
 
@@ -76,7 +76,22 @@ function Summary({ pullRequest }: { pullRequest: PullRequestSnapshot }) {
       <section className="content-section">
         <h2>Description</h2>
         <div className="markdown-body">
-          <Markdown>{pullRequest.body || "No description provided."}</Markdown>
+          <MarkdownBody body={pullRequest.body || "No description provided."} />
+        </div>
+      </section>
+      <section className="content-section">
+        <h2>
+          Comments{" "}
+          <span>
+            {pullRequest.activity?.filter((event) => event.type !== "commit").length ?? 0}
+          </span>
+        </h2>
+        <div className="summary-comments">
+          {pullRequest.activity
+            ?.filter((event) => event.type !== "commit")
+            .map((event) => (
+              <ActivityCard event={event} key={`summary-${event.type}-${event.id}`} />
+            ))}
         </div>
       </section>
       <section className="content-section">
@@ -124,9 +139,9 @@ function ActivityCard({ event }: { event: PullRequestActivity }) {
           <time>{relativeTime(event.createdAt)}</time>
         </header>
         {event.commitOid && <code>{event.commitOid.slice(0, 7)}</code>}
-        {event.body && (
+        {visibleMarkdown(event.body) && (
           <div className="markdown-body compact">
-            <Markdown>{event.body}</Markdown>
+            <MarkdownBody body={event.body} />
           </div>
         )}
       </div>
