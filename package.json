@@ -7,7 +7,7 @@
     "build": "vp run -r build",
     "check": "vp check",
     "dev": "vp -C apps/web dev",
-    "pr": "vp run --filter @auto-review/cli start --",
+    "pr": "vp run --filter @auto-review/cli start",
     "test": "vp test"
   },
   "devDependencies": {
