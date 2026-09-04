@@ -1,0 +1,21 @@
+{
+  "name": "@auto-review/cli",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "auto-review": "./dist/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@auto-review/github": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.3"
+  }
+}
