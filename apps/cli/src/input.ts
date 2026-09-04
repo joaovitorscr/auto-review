@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const DEFAULT_OUTPUT = "apps/web/public/pr.json";
 
 export function usage(): string {
@@ -35,4 +37,13 @@ export function repositoryName(url: string): string {
   const [, owner, repository] = new URL(url).pathname.split("/");
   if (!owner || !repository) throw new Error(`Could not read repository from PR URL: ${url}`);
   return `${owner}/${repository}`;
+}
+
+export function avatarUrl(login: string): string {
+  return `https://github.com/${encodeURIComponent(login)}.png?size=80`;
+}
+
+export function fileDiffUrl(pullRequestUrl: string, path: string): string {
+  const anchor = createHash("sha256").update(path).digest("hex");
+  return `${pullRequestUrl}/files#diff-${anchor}`;
 }

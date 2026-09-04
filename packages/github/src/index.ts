@@ -1,13 +1,14 @@
 export interface PullRequestAuthor {
   login: string;
   name?: string;
-  avatarUrl: string;
+  avatarUrl?: string;
 }
 
 export interface PullRequestFile {
   path: string;
   additions: number;
   deletions: number;
+  diffUrl?: string;
 }
 
 export interface PullRequestCheck {

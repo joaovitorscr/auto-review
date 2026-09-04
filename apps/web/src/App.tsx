@@ -32,6 +32,9 @@ export function App() {
 
   if (!pullRequest) return <main className="empty-state">Loading pull request...</main>;
 
+  const authorAvatarUrl =
+    pullRequest.author.avatarUrl ??
+    `https://github.com/${encodeURIComponent(pullRequest.author.login)}.png?size=80`;
   const passingChecks = pullRequest.checks.filter(
     (check) => checkTone(check.state) === "success",
   ).length;
@@ -87,13 +90,19 @@ export function App() {
           </div>
           <div className="file-list">
             {pullRequest.files.map((file) => (
-              <div className="file-row" key={file.path}>
+              <a
+                className="file-row"
+                href={file.diffUrl ?? `${pullRequest.url}/files`}
+                key={file.path}
+                rel="noreferrer"
+                target="_blank"
+              >
                 <span className="file-icon">TS</span>
                 <span className="file-path">{file.path}</span>
                 <span className="diff">
                   <i>+{file.additions}</i> <b>−{file.deletions}</b>
                 </span>
-              </div>
+              </a>
             ))}
           </div>
         </section>
@@ -102,7 +111,7 @@ export function App() {
           <section className="panel author-card">
             <p className="eyebrow">Opened by</p>
             <div>
-              <img src={pullRequest.author.avatarUrl} alt="" />
+              <img src={authorAvatarUrl} alt={`${pullRequest.author.login}'s avatar`} />
               <span>
                 <strong>{pullRequest.author.name ?? pullRequest.author.login}</strong>
                 <small>@{pullRequest.author.login}</small>
