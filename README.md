@@ -14,7 +14,28 @@ The interaction-specific design is in [docs/interaction-investigator.md](docs/in
 
 The evaluation plan is in [docs/evaluation.md](docs/evaluation.md). It defines counter-review, positive and negative fixtures, evidence-based scoring, shadow mode, and regression gates.
 
-This repository is currently in the research and design phase. The proposed design is in [docs/architecture.md](docs/architecture.md), and the external research is in [docs/research.md](docs/research.md).
+The first implementation is a Vite+ monorepo. It contains a TypeScript CLI, a React web app, and a shared package for GitHub data. The proposed reviewer design is in [docs/architecture.md](docs/architecture.md), and the external research is in [docs/research.md](docs/research.md).
+
+## Run it locally
+
+You need Node.js 22 or newer, [Vite+](https://viteplus.dev/), and an authenticated [GitHub CLI](https://cli.github.com/).
+
+```sh
+vp install
+pnpm pr snapshot       # current branch's pull request
+pnpm pr snapshot 123   # pull request number or URL
+vp dev
+```
+
+The CLI writes `apps/web/public/pr.json`. The web app reads that snapshot and shows the pull request summary, changed files, and GitHub checks. This file-based handoff is intentional for the first version. It keeps GitHub credentials out of the browser and leaves room for a local API once review runs need live progress.
+
+Useful workspace commands:
+
+```sh
+vp check
+vp test
+vp run -r build
+```
 
 ## Working definition of success
 
