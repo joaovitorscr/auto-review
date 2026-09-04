@@ -19,15 +19,23 @@ function relativeTime(value: string): string {
     ["hour", 3_600],
     ["minute", 60],
   ];
-  const [unit, size] = units.find(([, size]) => Math.abs(seconds) >= size) ?? ["second", 1];
+  const [unit, size] = units.find(([, size]) => Math.abs(seconds) >= size) ?? [
+    "second",
+    1,
+  ];
   return formatter.format(Math.round(seconds / size), unit);
 }
 
 function Avatar({ login, url }: { login: string; url?: string }) {
   const [failed, setFailed] = useState(false);
-  const source = url ?? `https://github.com/${encodeURIComponent(login)}.png?size=80`;
+  const source =
+    url ?? `https://github.com/${encodeURIComponent(login)}.png?size=80`;
   if (failed)
-    return <span className="avatar avatar-fallback">{login.slice(0, 2).toUpperCase()}</span>;
+    return (
+      <span className="avatar avatar-fallback">
+        {login.slice(0, 2).toUpperCase()}
+      </span>
+    );
   return (
     <img
       className="avatar"
@@ -76,7 +84,10 @@ function Summary({ pullRequest }: { pullRequest: PullRequestSnapshot }) {
         </div>
         <div>
           <span>Labels</span>
-          <strong>{pullRequest.labels?.map((label) => label.name).join(", ") || "None"}</strong>
+          <strong>
+            {pullRequest.labels?.map((label) => label.name).join(", ") ||
+              "None"}
+          </strong>
         </div>
         <div>
           <span>Activity</span>
@@ -93,14 +104,18 @@ function Summary({ pullRequest }: { pullRequest: PullRequestSnapshot }) {
         <h2>
           Comments{" "}
           <span>
-            {pullRequest.activity?.filter((event) => event.type !== "commit").length ?? 0}
+            {pullRequest.activity?.filter((event) => event.type !== "commit")
+              .length ?? 0}
           </span>
         </h2>
         <div className="summary-comments">
           {pullRequest.activity
             ?.filter((event) => event.type !== "commit")
             .map((event) => (
-              <ActivityCard event={event} key={`summary-${event.type}-${event.id}`} />
+              <ActivityCard
+                event={event}
+                key={`summary-${event.type}-${event.id}`}
+              />
             ))}
         </div>
       </section>
@@ -181,7 +196,9 @@ function Timeline({ activity = [] }: { activity?: PullRequestActivity[] }) {
         {activity.length === 0 ? (
           <p className="empty-copy">No timeline activity in this snapshot.</p>
         ) : (
-          activity.map((event) => <ActivityCard event={event} key={`${event.type}-${event.id}`} />)
+          activity.map((event) => (
+            <ActivityCard event={event} key={`${event.type}-${event.id}`} />
+          ))
         )}
       </div>
     </div>
@@ -223,7 +240,9 @@ function Code({ files }: { files: PullRequestFile[] }) {
           >
             <header>
               <div>
-                <span className="file-badge">{file.status?.slice(0, 1).toUpperCase() ?? "M"}</span>
+                <span className="file-badge">
+                  {file.status?.slice(0, 1).toUpperCase() ?? "M"}
+                </span>
                 <strong>{file.path}</strong>
               </div>
               <span className="diff-stat">
@@ -240,7 +259,9 @@ function Code({ files }: { files: PullRequestFile[] }) {
 }
 
 export function App() {
-  const [pullRequest, setPullRequest] = useState<PullRequestSnapshot | null>(null);
+  const [pullRequest, setPullRequest] = useState<PullRequestSnapshot | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("summary");
   useEffect(() => {
@@ -251,7 +272,9 @@ export function App() {
       })
       .then(setPullRequest)
       .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : "Could not load the PR"),
+        setError(
+          reason instanceof Error ? reason.message : "Could not load the PR",
+        ),
       );
   }, []);
   const checkSummary = useMemo(() => {
@@ -267,11 +290,13 @@ export function App() {
         <p className="eyebrow">Auto-review</p>
         <h1>Load a pull request</h1>
         <p>
-          Run <code>pnpm pr snapshot</code> from the repository root, then refresh this page.
+          Run <code>pnpm pr snapshot</code> from the repository root, then
+          refresh this page.
         </p>
       </main>
     );
-  if (!pullRequest) return <main className="empty-state">Loading pull request...</main>;
+  if (!pullRequest)
+    return <main className="empty-state">Loading pull request...</main>;
   return (
     <main className="pr-shell">
       <header className="pr-header">
@@ -288,10 +313,15 @@ export function App() {
         </div>
         <div className="pr-subtitle">
           <span className="author">
-            <Avatar login={pullRequest.author.login} url={pullRequest.author.avatarUrl} />
+            <Avatar
+              login={pullRequest.author.login}
+              url={`${pullRequest.author.avatarUrl}.png`}
+            />
             {pullRequest.author.login}
           </span>
-          <span>{relativeTime(pullRequest.updatedAt ?? pullRequest.fetchedAt)}</span>
+          <span>
+            {relativeTime(pullRequest.updatedAt ?? pullRequest.fetchedAt)}
+          </span>
           <code>
             {pullRequest.baseRefName} ← {pullRequest.headRefName}
           </code>
