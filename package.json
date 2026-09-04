@@ -1,0 +1,22 @@
+{
+  "name": "auto-review",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp run -r build",
+    "check": "vp check",
+    "dev": "vp -C apps/web dev",
+    "pr": "vp run --filter @auto-review/cli start --",
+    "test": "vp test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3",
+    "vite-plus": "^0.3.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@10.17.1"
+}
