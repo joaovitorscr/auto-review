@@ -210,10 +210,12 @@ code,
 }
 .markdown-body {
   color: #b6b9b9;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 1.75;
+}
+.markdown-body p {
+  margin: 9px 0;
 }
 .markdown-body > :first-child {
   margin-top: 0;
@@ -280,6 +282,7 @@ code,
 }
 .markdown-body ul,
 .markdown-body ol {
+  margin: 9px 0;
   padding-left: 22px;
 }
 .markdown-body li + li {
