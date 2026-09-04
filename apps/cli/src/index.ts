@@ -3,11 +3,13 @@
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { PullRequestCheck, PullRequestSnapshot } from "@auto-review/github";
+import { parseArguments, repositoryName } from "./input.js";
 
 const exec = promisify(execFile);
-const DEFAULT_OUTPUT = "apps/web/public/pr.json";
+const WORKSPACE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const FIELDS = [
   "additions",
   "author",
@@ -44,36 +46,6 @@ interface GhPullRequest {
   url: string;
 }
 
-function usage(): string {
-  return `Usage: auto-review snapshot [number-or-url] [--output path]\n\nFetches a pull request with GitHub CLI and writes a JSON snapshot.\nIf number-or-url is omitted, gh uses the pull request for the current branch.`;
-}
-
-function parseArguments(args: string[]): { target?: string; output: string } {
-  const [command, ...rest] = args;
-  if (command !== "snapshot") {
-    throw new Error(command ? `Unknown command: ${command}\n\n${usage()}` : usage());
-  }
-
-  let target: string | undefined;
-  let output = DEFAULT_OUTPUT;
-  for (let index = 0; index < rest.length; index += 1) {
-    const argument = rest[index];
-    if (argument === "--output" || argument === "-o") {
-      const value = rest[index + 1];
-      if (!value) throw new Error(`${argument} needs a path`);
-      output = value;
-      index += 1;
-    } else if (argument?.startsWith("-")) {
-      throw new Error(`Unknown option: ${argument}`);
-    } else if (target) {
-      throw new Error(`Unexpected argument: ${argument}`);
-    } else {
-      target = argument;
-    }
-  }
-  return { target, output };
-}
-
 function checkFrom(raw: Record<string, unknown>): PullRequestCheck {
   const state = String(raw.conclusion ?? raw.state ?? raw.status ?? "UNKNOWN");
   return {
@@ -84,30 +56,15 @@ function checkFrom(raw: Record<string, unknown>): PullRequestCheck {
   };
 }
 
-async function repositoryName(): Promise<string> {
-  const { stdout } = await exec("gh", [
-    "repo",
-    "view",
-    "--json",
-    "nameWithOwner",
-    "--jq",
-    ".nameWithOwner",
-  ]);
-  return stdout.trim();
-}
-
 async function fetchPullRequest(target?: string): Promise<PullRequestSnapshot> {
   const args = ["pr", "view"];
   if (target) args.push(target);
   args.push("--json", FIELDS);
 
-  const [{ stdout }, repository] = await Promise.all([
-    exec("gh", args, { maxBuffer: 10 * 1024 * 1024 }),
-    repositoryName(),
-  ]);
+  const { stdout } = await exec("gh", args, { maxBuffer: 10 * 1024 * 1024 });
   const raw = JSON.parse(stdout) as GhPullRequest;
   return {
-    repository,
+    repository: repositoryName(raw.url),
     number: raw.number,
     title: raw.title,
     body: raw.body,
@@ -129,7 +86,7 @@ async function fetchPullRequest(target?: string): Promise<PullRequestSnapshot> {
 
 async function main(): Promise<void> {
   const { target, output } = parseArguments(process.argv.slice(2));
-  const destination = resolve(output);
+  const destination = resolve(WORKSPACE_ROOT, output);
   const snapshot = await fetchPullRequest(target);
   await mkdir(dirname(destination), { recursive: true });
   await writeFile(destination, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
