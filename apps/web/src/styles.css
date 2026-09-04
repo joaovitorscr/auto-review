@@ -101,6 +101,15 @@ code,
   background: #222;
   object-fit: cover;
 }
+.avatar-fallback {
+  display: grid;
+  place-items: center;
+  color: #8fd4ba;
+  background: #173328;
+  font:
+    600 8px "DM Mono",
+    monospace;
+}
 .pr-subtitle code {
   padding-left: 13px;
   border-left: 1px solid #252727;
