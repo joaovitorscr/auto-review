@@ -123,3 +123,37 @@ it("resolves workspace tsconfig packages without installed node_modules", async 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("resolves npm tsconfig packages from a dependency root and falls back when they are missing", async () => {
+  const root = await mkdtemp(join(tmpdir(), "auto-review-checkout-"));
+  const installed = await mkdtemp(join(tmpdir(), "auto-review-installed-"));
+  try {
+    execFileSync("git", ["init", "--quiet", root]);
+    await mkdir(join(installed, "node_modules/@tsconfig/bundler"), { recursive: true });
+    await writeFile(
+      join(installed, "node_modules/@tsconfig/bundler/tsconfig.json"),
+      JSON.stringify({ compilerOptions: { module: "ESNext", moduleResolution: "Bundler" } }),
+    );
+    await writeFile(
+      join(root, "tsconfig.json"),
+      JSON.stringify({ extends: "@tsconfig/bundler/tsconfig.json" }),
+    );
+    await writeFile(join(root, "package.json"), JSON.stringify({ type: "module" }));
+    await writeFile(join(root, "helper.ts"), "export function helper() { return 1; }");
+    await writeFile(join(root, "app.ts"), 'import { helper } from "./helper"; helper();');
+
+    const fallback = await indexRepository(root);
+    expect(fallback.configErrors).toEqual([
+      { config: "tsconfig.json", message: expect.stringContaining("@tsconfig/bundler") },
+    ]);
+    expect(fallback.files).toEqual(["app.ts", "helper.ts"]);
+
+    const resolved = await indexRepository(root, { dependencyRoot: installed });
+    const helper = resolved.symbols.find((symbol) => symbol.name === "helper");
+    expect(resolved.configErrors).toEqual([]);
+    expect(resolved.calls.find((call) => call.expression === "helper")?.target).toBe(helper?.id);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(installed, { recursive: true, force: true });
+  }
+});

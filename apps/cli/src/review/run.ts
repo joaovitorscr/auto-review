@@ -40,12 +40,16 @@ export async function review(
     ignoredFiles: context.ignored,
     omittedContext: context.omitted,
     diagnostics: context.diagnostics,
+    configErrors: context.configErrors,
   };
   const metadata = {
     version: 3,
     // Partial means some changed code or context was not reviewed; see coverage.
     status:
-      coverage.skippedFiles.length || coverage.omittedContext.length || coverage.diagnostics.length
+      coverage.skippedFiles.length ||
+      coverage.omittedContext.length ||
+      coverage.diagnostics.length ||
+      coverage.configErrors.length
         ? ("partial" as const)
         : ("complete" as const),
     base: context.base,
@@ -150,6 +154,11 @@ export function renderReview(report: Awaited<ReturnType<typeof review>>) {
     `${report.records.filter((record) => record.verdict !== "accept").length} candidate(s) withheld. ${report.coverage.skippedFiles.length} unsupported file(s) skipped. ${report.coverage.omittedContext.length} context range(s) omitted. ${report.coverage.diagnostics.length} syntax diagnostic(s).`,
     "",
   );
+  for (const error of report.coverage.configErrors)
+    lines.push(
+      `Could not resolve \`${error.config}\`, so its files were indexed with default compiler options: ${error.message}`,
+      "",
+    );
   if (report.coverage.skippedFiles.length)
     lines.push(
       `Skipped files: ${report.coverage.skippedFiles.map((file) => `\`${file}\``).join(", ")}`,
