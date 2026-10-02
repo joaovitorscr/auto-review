@@ -1,7 +1,11 @@
 {
   "split": "dev",
   "kind": "regression",
-  "file": "src/paginate.ts",
-  "lines": [1, 6],
+  "locations": [
+    {
+      "file": "src/paginate.ts",
+      "lines": [1, 6]
+    }
+  ],
   "note": "paginate now treats page as one-based; the unchanged route still passes zero-based pages, so page 0 returns the wrong slice and the first page is skipped."
 }

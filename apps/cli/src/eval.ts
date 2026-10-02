@@ -10,18 +10,19 @@ import { withReviewContext } from "./review/git.js";
 import { review } from "./review/run.js";
 
 const WORKSPACE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const CASES = join(WORKSPACE_ROOT, "evals");
+// evals/ cases are committed and inline; corpus/cases/ point at local clones and stay git-ignored.
+const CASE_ROOTS = [join(WORKSPACE_ROOT, "evals"), join(WORKSPACE_ROOT, "corpus", "cases")];
 const agents = { codex: codexProvider, claude: claudeProvider };
 
-type Label =
-  | {
-      split: "dev" | "holdout";
-      kind: "regression";
-      file: string;
-      lines: [number, number];
-      note: string;
-    }
-  | { split: "dev" | "holdout"; kind: "none"; note: string };
+/** A case either has base/ and head/ trees beside it, or names a local repository and two revisions. */
+type Label = {
+  split: "dev" | "holdout";
+  note: string;
+  source?: { repository: string; base: string; head: string };
+} & (
+  | { kind: "regression"; locations: Array<{ file: string; lines: [number, number] }> }
+  | { kind: "none" }
+);
 
 function parse(args: string[]) {
   const options = { agents: [] as Array<keyof typeof agents>, split: "dev", only: "" };
@@ -44,7 +45,7 @@ function parse(args: string[]) {
 }
 
 /** Builds a two-commit repository from a case's base/ and head/ trees and returns its path. */
-async function buildRepository(name: string) {
+async function buildRepository(directory: string, name: string) {
   const root = await mkdtemp(join(tmpdir(), `auto-review-eval-${name}-`));
   const git = (...args: string[]) =>
     execFileSync("git", [
@@ -59,10 +60,10 @@ async function buildRepository(name: string) {
   git("init", "--quiet", "-b", "main");
   git("config", "user.name", "AutoReview eval");
   git("config", "user.email", "eval@example.test");
-  await cp(join(CASES, name, "base"), root, { recursive: true });
+  await cp(join(directory, "base"), root, { recursive: true });
   git("add", ".");
   git("commit", "--quiet", "-m", "base");
-  await cp(join(CASES, name, "head"), root, { recursive: true });
+  await cp(join(directory, "head"), root, { recursive: true });
   git("add", ".");
   git("commit", "--quiet", "-m", "change");
   return root;
@@ -70,30 +71,44 @@ async function buildRepository(name: string) {
 
 async function main() {
   const options = parse(process.argv.slice(2));
-  const names = (await readdir(CASES, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory() && (!options.only || entry.name === options.only))
-    .map((entry) => entry.name)
-    .sort();
+  const cases: Array<{ name: string; directory: string }> = [];
+  for (const root of CASE_ROOTS) {
+    const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries)
+      if (entry.isDirectory() && (!options.only || entry.name === options.only))
+        cases.push({ name: entry.name, directory: join(root, entry.name) });
+  }
+  cases.sort((a, b) => a.name.localeCompare(b.name));
   const results = [];
-  for (const name of names) {
-    const label: Label = JSON.parse(await readFile(join(CASES, name, "case.json"), "utf8"));
+  for (const { name, directory } of cases) {
+    const label: Label = JSON.parse(await readFile(join(directory, "case.json"), "utf8"));
     if (options.split !== "all" && label.split !== options.split) continue;
-    const repository = await buildRepository(name);
+    const repository = label.source
+      ? resolve(WORKSPACE_ROOT, label.source.repository)
+      : await buildRepository(directory, name);
+    const revisions = label.source ?? { base: "HEAD~1", head: "HEAD" };
     try {
       for (const agent of options.agents) {
         console.error(`${name} with ${agent}...`);
         const started = Date.now();
         try {
           const report = await withReviewContext(
-            { repository, base: "HEAD~1", head: "HEAD" },
+            { repository, base: revisions.base, head: revisions.head },
             (context, checkout) => review(context, agents[agent]({ checkout })),
           );
-          const matches = (finding: (typeof report.findings)[number]) =>
+          const matches = (finding: { file: string; line: number }) =>
             label.kind === "regression" &&
-            finding.file === label.file &&
-            finding.line >= label.lines[0] &&
-            finding.line <= label.lines[1];
+            label.locations.some(
+              (location) =>
+                finding.file === location.file &&
+                finding.line >= location.lines[0] &&
+                finding.line <= location.lines[1],
+            );
           const hit = report.findings.some(matches);
+          // The detector saw the bug, but the citation check or counter-review withheld it.
+          const withheld = report.records.some(
+            (record) => record.verdict !== "accept" && matches(record.finding),
+          );
           results.push({
             case: name,
             split: label.split,
@@ -104,13 +119,24 @@ async function main() {
               label.kind === "regression"
                 ? hit
                   ? "found"
-                  : "missed"
+                  : withheld
+                    ? "withheld"
+                    : "missed"
                 : report.findings.length
                   ? "false alarm?"
                   : "clean",
             extraFindings: report.findings.filter((finding) => !matches(finding)).length,
             findings: report.findings,
-            withheld: report.records.filter((record) => record.verdict !== "accept").length,
+            status: report.status,
+            withheld: report.records
+              .filter((record) => record.verdict !== "accept")
+              .map(({ finding, verdict, reason }) => ({
+                file: finding.file,
+                line: finding.line,
+                title: finding.title,
+                verdict,
+                reason,
+              })),
             durationMs: Date.now() - started,
             costUsd: report.passes.reduce<number | undefined>(
               (sum, pass) =>
@@ -131,7 +157,7 @@ async function main() {
         }
       }
     } finally {
-      await rm(repository, { recursive: true, force: true });
+      if (!label.source) await rm(repository, { recursive: true, force: true });
     }
   }
   const destination = join(WORKSPACE_ROOT, "outputs", `eval-${Date.now()}.json`);
