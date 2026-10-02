@@ -1,35 +1,51 @@
-# Auto-review
+# AutoReview
 
-An experiment in building a useful, model-agnostic pull request reviewer.
+An open-source code reviewer that runs locally and uses the coding agent you already have installed. It looks for concrete regressions by reading how a change interacts with the surrounding code, and it reports little else.
 
-The goal is not to clone Macroscope's product. It is to reproduce the parts that appear to matter most for a small personal tool:
+Status: early prototype. The local reviewer supports Codex only, reviews committed JavaScript and TypeScript changes, and has not yet been measured against a labeled set of real bugs. Treat its findings as leads, and a clean report as "nothing found", not "bug-free".
 
-- give the reviewer enough repository context to reason beyond the diff;
-- ask several focused agents to look for runtime bugs;
-- validate findings before posting them;
-- keep the output short, severe, and tied to a file and line;
-- let the user choose the model and provider.
+## Requirements
 
-The interaction-specific design is in [docs/interaction-investigator.md](docs/interaction-investigator.md). It describes how the reviewer can discover concepts such as workspaces, tenants, and organizations from the codebase and derive user journeys without hard-coded project rules.
+- Node.js 22.12 or newer
+- [Vite+](https://viteplus.dev/) (`vp`) and pnpm
+- [Codex CLI](https://github.com/openai/codex), logged in, for reviews
+- [GitHub CLI](https://cli.github.com/), logged in, only for PR snapshots
 
-The evaluation plan is in [docs/evaluation.md](docs/evaluation.md). It defines counter-review, positive and negative fixtures, evidence-based scoring, shadow mode, and regression gates.
-
-The first implementation is a Vite+ monorepo. It contains a TypeScript CLI, a React web app, and a shared package for GitHub data. The proposed reviewer design is in [docs/architecture.md](docs/architecture.md), and the external research is in [docs/research.md](docs/research.md).
-
-## Run it locally
-
-You need Node.js 22 or newer, [Vite+](https://viteplus.dev/), and an authenticated [GitHub CLI](https://cli.github.com/).
+## First run
 
 ```sh
+git clone <this repository> && cd auto-review
 vp install
-pnpm pr snapshot       # current branch's pull request
-pnpm pr snapshot 123   # pull request number or URL
-vp dev
+pnpm pr review --base HEAD~1 --dry-run --output /tmp/context.json
 ```
 
-The CLI writes `apps/web/public/pr.json`. The web app reads that snapshot and shows the PR in three tabs: Summary, Timeline, and Code. The snapshot includes comments, reviews, commits, checks, and inline file patches. This file-based handoff keeps GitHub credentials out of the browser and leaves room for a local API once review runs need live progress.
+The dry run builds the review context without calling an agent, so it is a safe way to check your setup. Paths are resolved from the AutoReview checkout; pass `--repo /path/to/repo` to review another repository.
 
-Useful workspace commands:
+## Review a branch
+
+Commit the changes you want reviewed, then run:
+
+```sh
+pnpm pr review --base main
+```
+
+AutoReview checks out the merge base and HEAD into temporary Git worktrees, so your checkout is never modified. It collects the changed code plus AST-linked callers, callees, and imports, then runs a detector pass and a separate counter-review pass through Codex. Findings whose citations do not match the collected source are withheld.
+
+The terminal shows accepted findings. A JSON report is saved under `outputs/` (or `--output path`) with the revisions, context, accepted and withheld candidates, and coverage limits. Staged, unstaged, and untracked changes are excluded.
+
+Options: `--head ref` (default `HEAD`), `--repo path`, `--model id` to override Codex's configured model, `--dry-run`, and `--output path`. Reports stay on your machine, but Codex sends the collected source to its model provider.
+
+## Other commands
+
+```sh
+pnpm pr index . --output /tmp/index.json   # dump the TypeScript/JavaScript AST index
+pnpm pr snapshot [number-or-url]           # save a GitHub PR to apps/web/public/pr.json
+pnpm run dev                               # dashboard that displays the PR snapshot
+```
+
+The dashboard shows PR snapshots (summary, timeline, and code). It does not display review runs yet.
+
+## Development
 
 ```sh
 vp check
@@ -37,25 +53,6 @@ vp test
 vp run -r build
 ```
 
-## Working definition of success
+## License
 
-For a personal repository, a review is useful when it finds a real correctness or security problem that ordinary tests missed, explains why it happens, and does not bury that finding in style comments. A first milestone is a local CLI that reviews a Git diff and emits structured findings. GitHub comments and multiple providers come after that works reliably.
-
-## Proposed first build
-
-1. Read a base/head diff and repository instructions.
-2. Collect changed files plus relevant callers, callees, types, tests, and recent history.
-3. Run a small set of independent detector tasks through a common model adapter.
-4. Run a separate validator against each candidate finding.
-5. Deduplicate, rank by severity and confidence, and render Markdown or JSON.
-6. Save accepted and rejected findings as an evaluation record.
-
-The project should start with one provider that speaks an OpenAI-compatible API, then add native adapters only when a provider needs different behavior. The reviewer must depend on a provider-neutral interface, not on one vendor's SDK.
-
-## Non-goals for the first milestone
-
-- automatic fixes or automatic approval;
-- a hosted service;
-- support for every language on day one;
-- prompt auto-tuning before there is a labeled evaluation set;
-- replacing tests, static analysis, or human review for high-risk changes.
+[MIT](LICENSE)

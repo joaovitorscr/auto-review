@@ -11,6 +11,10 @@ import type {
   PullRequestCheck,
   PullRequestSnapshot,
 } from "@auto-review/github";
+import { withReviewContext } from "./review/git.js";
+import { codexProvider } from "./review/codex.js";
+import { review, renderReview } from "./review/run.js";
+import { indexRepository } from "./repository-index.js";
 import { avatarUrl, fileDiffUrl, parseArguments, repositoryName } from "./input.js";
 
 const exec = promisify(execFile);
@@ -226,7 +230,54 @@ async function fetchPullRequest(target?: string): Promise<PullRequestSnapshot> {
 }
 
 async function main(): Promise<void> {
-  const { target, output } = parseArguments(process.argv.slice(2));
+  const args = parseArguments(process.argv.slice(2));
+  if (args.command === "review") {
+    console.error("Building review context from committed changes...");
+    await withReviewContext(
+      { repository: resolve(WORKSPACE_ROOT, args.repository), base: args.base, head: args.head },
+      async (context, checkout) => {
+        console.error(
+          `${context.changes.length} changed JS/TS file(s), ${context.snippets.length} source range(s). Local edits are excluded.`,
+        );
+        const result = args.dryRun
+          ? context
+          : {
+              ...(await review(context, codexProvider({ checkout, model: args.model }), (message) =>
+                console.error(message),
+              )),
+              provider: { name: "codex", requestedModel: args.model ?? null },
+            };
+        if (args.output || !args.dryRun) {
+          const destination = resolve(
+            WORKSPACE_ROOT,
+            args.output || `outputs/review-${context.head.slice(0, 12)}-${Date.now()}.json`,
+          );
+          await mkdir(dirname(destination), { recursive: true });
+          await writeFile(destination, `${JSON.stringify(result, null, 2)}\n`, "utf8");
+          console.error(
+            `Saved ${args.dryRun ? "review context" : "review report"} to ${destination}`,
+          );
+        }
+        if ("findings" in result) process.stdout.write(renderReview(result));
+        else if (!args.output) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      },
+    );
+    return;
+  }
+  const { target, output } = args;
+  if (args.command === "index") {
+    const index = await indexRepository(resolve(WORKSPACE_ROOT, target ?? "."));
+    const json = `${JSON.stringify(index, null, 2)}\n`;
+    if (output) {
+      const destination = resolve(WORKSPACE_ROOT, output);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, json, "utf8");
+      console.log(`Indexed ${index.files.length} files to ${destination}`);
+    } else {
+      process.stdout.write(json);
+    }
+    return;
+  }
   const destination = resolve(WORKSPACE_ROOT, output);
   const snapshot = await fetchPullRequest(target);
   await mkdir(dirname(destination), { recursive: true });

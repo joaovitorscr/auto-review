@@ -1,25 +1,27 @@
 import { createHash } from "node:crypto";
+import { parseReviewArguments } from "./review/input.js";
 
 const DEFAULT_OUTPUT = "apps/web/public/pr.json";
 
 export function usage(): string {
-  return `Usage: auto-review snapshot [number-or-url] [--output path]\n\nFetches a pull request with GitHub CLI and writes a JSON snapshot.\nIf number-or-url is omitted, gh uses the pull request for the current branch.`;
+  return `Usage: auto-review snapshot [number-or-url] [--output path]\n       auto-review index [repository-path] [--output path]\n       auto-review review --base ref [--head ref] [--repo path] [--model id] [--output report.json] [--dry-run]\n\nReview runs Codex against committed JS/TS changes. --dry-run writes context without invoking Codex.\n\nIndex writes a local Git checkout AST as JSON to stdout or --output.\n\nSnapshot fetches a pull request with GitHub CLI and writes a JSON snapshot.\nIf number-or-url is omitted, gh uses the pull request for the current branch.`;
 }
 
-export function parseArguments(args: string[]): { target?: string; output: string } {
+export function parseArguments(args: string[]) {
   const normalizedArgs = args[0] === "--" ? args.slice(1) : args;
   const [command, ...rest] = normalizedArgs;
-  if (command !== "snapshot") {
+  if (command === "review") return parseReviewArguments(rest);
+  if (command !== "snapshot" && command !== "index") {
     throw new Error(command ? `Unknown command: ${command}\n\n${usage()}` : usage());
   }
 
   let target: string | undefined;
-  let output = DEFAULT_OUTPUT;
+  let output = command === "index" ? "" : DEFAULT_OUTPUT;
   for (let index = 0; index < rest.length; index += 1) {
     const argument = rest[index];
     if (argument === "--output" || argument === "-o") {
       const value = rest[index + 1];
-      if (!value) throw new Error(`${argument} needs a path`);
+      if (!value || value.startsWith("-")) throw new Error(`${argument} needs a path`);
       output = value;
       index += 1;
     } else if (argument?.startsWith("-")) {
@@ -30,7 +32,7 @@ export function parseArguments(args: string[]): { target?: string; output: strin
       target = argument;
     }
   }
-  return { target, output };
+  return { command, target, output } as const;
 }
 
 export function repositoryName(url: string): string {
