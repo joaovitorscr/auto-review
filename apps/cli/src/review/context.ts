@@ -59,16 +59,17 @@ export function packContext(
     after: ReadonlyMap<string, string>;
     instructions: Array<{ file: string; text: string }>;
     skipped: string[];
+    ignored: string[];
   },
-  maxCharacters = 120_000,
+  maxCharacters = 400_000,
 ) {
   const { index, before, after, ...metadata } = input;
   const snippets: Snippet[] = [];
-  const omitted: string[] = [];
+  const omitted = new Set<string>();
   let remaining = maxCharacters - JSON.stringify(metadata).length;
   if (remaining < 0)
     throw new Error(
-      "The diff and instructions exceed the 120,000-character context budget. Review a smaller commit range.",
+      `The diff and instructions exceed the ${maxCharacters.toLocaleString("en-US")}-character context budget. Review a smaller commit range.`,
     );
   const add = (
     file: string,
@@ -103,7 +104,7 @@ export function packContext(
     };
     const cost = JSON.stringify(snippet).length;
     if (cost > remaining) {
-      omitted.push(`${revision}:${file}:${startLine}-${endLine} (${reason})`);
+      omitted.add(`${revision}:${file}:${startLine}-${endLine}`);
       return;
     }
     remaining -= cost;
@@ -157,7 +158,13 @@ export function packContext(
     if (entry.target && changedFiles.has(entry.file))
       add(entry.target, "head", 1, 200, "dependency of changed file");
   }
-  return { ...metadata, snippets, omitted, diagnostics: index.diagnostics };
+  const reviewed = new Set(snippets.map((snippet) => snippet.file));
+  return {
+    ...metadata,
+    snippets,
+    omitted: [...omitted],
+    diagnostics: index.diagnostics.filter((diagnostic) => reviewed.has(diagnostic.file)),
+  };
 }
 
 export type ReviewContext = ReturnType<typeof packContext>;

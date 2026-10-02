@@ -34,20 +34,27 @@ export async function review(
     validatorAudit?: ReturnType<typeof parseDecisions>[number]["audit"];
   }> = [];
   const passes: Array<{ phase: string; durationMs: number }> = [];
+  const coverage = {
+    changedFiles: context.changes.map((change) => change.file),
+    skippedFiles: context.skipped,
+    ignoredFiles: context.ignored,
+    omittedContext: context.omitted,
+    diagnostics: context.diagnostics,
+  };
   const metadata = {
-    version: 2,
+    version: 3,
+    // Partial means some changed code or context was not reviewed; see coverage.
+    status:
+      coverage.skippedFiles.length || coverage.omittedContext.length || coverage.diagnostics.length
+        ? ("partial" as const)
+        : ("complete" as const),
     base: context.base,
     head: context.head,
     contextHash: createHash("sha256").update(serialized).digest("hex"),
     policyVersion: 2,
     reviewMethod: "static_code_review" as const,
     context,
-    coverage: {
-      changedFiles: context.changes.map((change) => change.file),
-      skippedFiles: context.skipped,
-      omittedContext: context.omitted,
-      diagnostics: context.diagnostics,
-    },
+    coverage,
     passes,
     records,
   };
@@ -116,6 +123,8 @@ export function renderReview(report: Awaited<ReturnType<typeof review>>) {
     `Review of ${report.base.slice(0, 12)}..${report.head.slice(0, 12)}.`,
     "",
   ];
+  if (report.status === "partial")
+    lines.push("Partial review: some changed code or context was not covered (details below).", "");
   if (!report.coverage.changedFiles.length)
     lines.push("No supported TypeScript or JavaScript changes to review.");
   else if (!report.findings.length)

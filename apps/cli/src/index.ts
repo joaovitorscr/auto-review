@@ -19,6 +19,8 @@ import { avatarUrl, fileDiffUrl, parseArguments, repositoryName } from "./input.
 
 const exec = promisify(execFile);
 const WORKSPACE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+// pnpm runs the CLI from apps/cli; INIT_CWD is where the user typed the command.
+const INVOKED_FROM = process.env.INIT_CWD ?? process.cwd();
 const FIELDS = [
   "additions",
   "author",
@@ -232,44 +234,73 @@ async function fetchPullRequest(target?: string): Promise<PullRequestSnapshot> {
 async function main(): Promise<void> {
   const args = parseArguments(process.argv.slice(2));
   if (args.command === "review") {
+    const controller = new AbortController();
+    const cancel = () => {
+      if (controller.signal.aborted) process.exit(130);
+      console.error("Cancelling review and cleaning up (press Ctrl-C again to force quit)...");
+      controller.abort(new Error("Review cancelled."));
+    };
+    process.on("SIGINT", cancel).on("SIGTERM", cancel);
     console.error("Building review context from committed changes...");
     await withReviewContext(
-      { repository: resolve(WORKSPACE_ROOT, args.repository), base: args.base, head: args.head },
+      {
+        repository: resolve(INVOKED_FROM, args.repository),
+        base: args.base,
+        head: args.head,
+        signal: controller.signal,
+      },
       async (context, checkout) => {
         console.error(
           `${context.changes.length} changed JS/TS file(s), ${context.snippets.length} source range(s). Local edits are excluded.`,
         );
-        const result = args.dryRun
-          ? context
-          : {
-              ...(await review(context, codexProvider({ checkout, model: args.model }), (message) =>
-                console.error(message),
-              )),
-              provider: { name: "codex", requestedModel: args.model ?? null },
-            };
-        if (args.output || !args.dryRun) {
-          const destination = resolve(
-            WORKSPACE_ROOT,
-            args.output || `outputs/review-${context.head.slice(0, 12)}-${Date.now()}.json`,
-          );
+        const save = async (result: object, label: string) => {
+          const destination = args.output
+            ? resolve(INVOKED_FROM, args.output)
+            : resolve(WORKSPACE_ROOT, `outputs/review-${context.head.slice(0, 12)}-${Date.now()}.json`);
           await mkdir(dirname(destination), { recursive: true });
           await writeFile(destination, `${JSON.stringify(result, null, 2)}\n`, "utf8");
-          console.error(
-            `Saved ${args.dryRun ? "review context" : "review report"} to ${destination}`,
-          );
+          console.error(`Saved ${label} to ${destination}`);
+        };
+        if (args.dryRun) {
+          if (args.output) await save(context, "review context");
+          else process.stdout.write(`${JSON.stringify(context, null, 2)}\n`);
+          return;
         }
-        if ("findings" in result) process.stdout.write(renderReview(result));
-        else if (!args.output) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        const provider = { name: "codex", requestedModel: args.model ?? null };
+        try {
+          const result = await review(
+            context,
+            codexProvider({ checkout, model: args.model, signal: controller.signal }),
+            (message) => console.error(message),
+          );
+          await save({ ...result, provider }, "review report");
+          process.stdout.write(renderReview(result));
+        } catch (error) {
+          const cancelled = controller.signal.aborted;
+          await save(
+            {
+              version: 3,
+              status: cancelled ? "cancelled" : "failed",
+              base: context.base,
+              head: context.head,
+              error: error instanceof Error ? error.message : String(error),
+              provider,
+            },
+            `${cancelled ? "cancelled" : "failed"} review record`,
+          );
+          if (cancelled) process.exitCode = 130;
+          throw error;
+        }
       },
     );
     return;
   }
   const { target, output } = args;
   if (args.command === "index") {
-    const index = await indexRepository(resolve(WORKSPACE_ROOT, target ?? "."));
+    const index = await indexRepository(resolve(INVOKED_FROM, target ?? "."));
     const json = `${JSON.stringify(index, null, 2)}\n`;
     if (output) {
-      const destination = resolve(WORKSPACE_ROOT, output);
+      const destination = resolve(INVOKED_FROM, output);
       await mkdir(dirname(destination), { recursive: true });
       await writeFile(destination, json, "utf8");
       console.log(`Indexed ${index.files.length} files to ${destination}`);
@@ -288,5 +319,5 @@ async function main(): Promise<void> {
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`auto-review: ${message}`);
-  process.exitCode = 1;
+  process.exitCode ||= 1;
 });

@@ -10,3 +10,4 @@ coverage/
 *.tsbuildinfo
 apps/web/public/pr.json
 /outputs/
+.DS_Store

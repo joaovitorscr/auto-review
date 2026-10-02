@@ -81,4 +81,16 @@ process.stdin.on('end', () => {
       ).rejects.toThrow("timed out");
     });
   });
+  it("stops its child and reports cancellation when aborted", async () => {
+    await withExecutable("setInterval(() => {}, 1000)", async (directory, executable) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new Error("Review cancelled.")), 100);
+      await expect(
+        codexProvider({ checkout: directory, executable, signal: controller.signal }).complete({
+          prompt: "test",
+          schema: {},
+        }),
+      ).rejects.toThrow("Review cancelled.");
+    });
+  });
 });

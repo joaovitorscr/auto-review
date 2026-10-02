@@ -14,6 +14,7 @@ export function codexProvider(options: {
   model?: string;
   executable?: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }): ModelProvider {
   return {
     async complete(request) {
@@ -44,6 +45,7 @@ export function codexProvider(options: {
         await new Promise<void>((accept, reject) => {
           const child = spawn(options.executable ?? "codex", args, {
             stdio: ["pipe", "ignore", "pipe"],
+            signal: options.signal,
           });
           let stderr = "";
           let timedOut = false;
@@ -59,11 +61,13 @@ export function codexProvider(options: {
           });
           child.on("error", (error) => {
             clearTimeout(timer);
-            reject(new Error(`Could not start Codex: ${error.message}`));
+            if (options.signal?.aborted) reject(options.signal.reason);
+            else reject(new Error(`Could not start Codex: ${error.message}`));
           });
           child.on("close", (code) => {
             clearTimeout(timer);
-            if (timedOut) reject(new Error("Codex review pass timed out after its time limit."));
+            if (options.signal?.aborted) reject(options.signal.reason);
+            else if (timedOut) reject(new Error("Codex review pass timed out after its time limit."));
             else if (code !== 0)
               reject(
                 new Error(

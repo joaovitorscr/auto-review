@@ -28,6 +28,7 @@ const context: ReviewContext = {
   ],
   instructions: [],
   skipped: [],
+  ignored: [],
   omitted: [],
   diagnostics: [],
 };
@@ -198,6 +199,7 @@ describe("context budget", () => {
       after: new Map([["amount.ts", "x".repeat(2000)]]),
       instructions: [],
       skipped: [],
+      ignored: [],
     };
     expect(packContext(input, 1000).omitted).not.toHaveLength(0);
     expect(() => packContext(input, 10)).toThrow("context budget");
@@ -227,6 +229,8 @@ describe("Git and AST context", () => {
       git("-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "base");
       const base = git("rev-parse", "HEAD");
       await writeFile(join(root, "amount.ts"), context.snippets[0]!.text + "\n");
+      await writeFile(join(root, "NOTES.md"), "Changed docs.\n");
+      await writeFile(join(root, "styles.css"), "body { color: red; }\n");
       git("add", ".");
       git("-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "regression");
       const head = git("rev-parse", "HEAD");
@@ -243,6 +247,8 @@ describe("Git and AST context", () => {
       expect(packed.base).toBe(base);
       expect(packed.head).toBe(head);
       expect(packed.changes.map((change) => change.file)).toEqual(["amount.ts"]);
+      expect(packed.ignored).toEqual(["NOTES.md"]);
+      expect(packed.skipped).toEqual(["styles.css"]);
       expect(packed.snippets).toContainEqual(
         expect.objectContaining({ file: "caller.ts", reason: "caller charge" }),
       );
