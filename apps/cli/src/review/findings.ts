@@ -108,22 +108,22 @@ export const validationSchema = {
 
 export function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Expected a JSON object from Codex");
+    throw new Error("Expected a JSON object from the agent");
   return value as Record<string, unknown>;
 }
 const string = (value: unknown) => {
   if (typeof value !== "string" || !value.trim() || value.length > 12_000)
-    throw new Error("Invalid or empty text in Codex response");
+    throw new Error("Invalid or empty text in agent response");
   return value;
 };
 const integer = (value: unknown) => {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
-    throw new Error("Invalid line or candidate ID in Codex response");
+    throw new Error("Invalid line or candidate ID in agent response");
   return value;
 };
 const array = (value: unknown) => {
   if (!Array.isArray(value) || value.length > 30)
-    throw new Error("Expected an array with at most 30 entries from Codex");
+    throw new Error("Expected an array with at most 30 entries from the agent");
   return value as unknown[];
 };
 function parseAudit(value: unknown) {
@@ -171,22 +171,22 @@ export function parseFindings(value: unknown) {
     const finding = object(item);
     const severity = finding.severity;
     if (severity !== "critical" && severity !== "high" && severity !== "medium")
-      throw new Error("Invalid severity from Codex");
+      throw new Error("Invalid severity from the agent");
     if (
       typeof finding.confidence !== "number" ||
       !Number.isFinite(finding.confidence) ||
       finding.confidence < 0 ||
       finding.confidence > 1
     )
-      throw new Error("Invalid confidence from Codex");
+      throw new Error("Invalid confidence from the agent");
     const evidence = array(finding.evidence).map((item) => {
       const citation = object(item);
       const revision = citation.revision;
       if (revision !== "base" && revision !== "head")
-        throw new Error("Invalid evidence revision from Codex");
+        throw new Error("Invalid evidence revision from the agent");
       const startLine = integer(citation.startLine);
       const endLine = integer(citation.endLine);
-      if (endLine < startLine) throw new Error("Invalid evidence range from Codex");
+      if (endLine < startLine) throw new Error("Invalid evidence range from the agent");
       return { file: string(citation.file), revision, startLine, endLine } as const;
     });
     const audit = parseAudit(finding.audit);
@@ -212,7 +212,7 @@ export function parseDecisions(value: unknown) {
     const decision = object(item);
     const verdict = decision.verdict;
     if (verdict !== "accept" && verdict !== "reject" && verdict !== "needs_more_context")
-      throw new Error("Invalid validation verdict from Codex");
+      throw new Error("Invalid validation verdict from the agent");
     return {
       candidateId: integer(decision.candidateId),
       verdict,

@@ -2,13 +2,13 @@
 
 An open-source code reviewer that runs locally and uses the coding agent you already have installed. It looks for concrete regressions by reading how a change interacts with the surrounding code, and it reports little else.
 
-Status: early prototype. The local reviewer supports Codex only, reviews committed JavaScript and TypeScript changes, and has not yet been measured against a labeled set of real bugs. Treat its findings as leads, and a clean report as "nothing found", not "bug-free".
+Status: early prototype. The local reviewer supports Codex and Claude Code, reviews committed JavaScript and TypeScript changes, and has not yet been measured against a labeled set of real bugs. Treat its findings as leads, and a clean report as "nothing found", not "bug-free".
 
 ## Requirements
 
 - Node.js 22.12 or newer
 - [Vite+](https://viteplus.dev/) (`vp`) and pnpm
-- [Codex CLI](https://github.com/openai/codex), logged in, for reviews
+- [Codex CLI](https://github.com/openai/codex) or [Claude Code](https://claude.com/claude-code), logged in, for reviews
 - [GitHub CLI](https://cli.github.com/), logged in, only for PR snapshots
 
 ## First run
@@ -29,11 +29,11 @@ Commit the changes you want reviewed, then run:
 pnpm pr review --base main
 ```
 
-AutoReview checks out the merge base and HEAD into temporary Git worktrees, so your checkout is never modified. It collects the changed code plus AST-linked callers, callees, and imports, then runs a detector pass and a separate counter-review pass through Codex. Findings whose citations do not match the collected source are withheld.
+AutoReview checks out the merge base and HEAD into temporary Git worktrees, so your checkout is never modified. It collects the changed code plus AST-linked callers, callees, and imports, then runs a detector pass and a separate counter-review pass through your coding agent. Use `--agent claude` for Claude Code; Codex is the default. Findings whose citations do not match the collected source are withheld.
 
 The terminal shows accepted findings. A JSON report is saved under `outputs/` (or `--output path`) with the revisions, context, accepted and withheld candidates, and coverage limits. Its `status` is `complete`, `partial` (some changed code, config, or context was not reviewed; docs and lockfiles do not count), `failed`, or `cancelled`. Ctrl-C stops the agent and removes the temporary checkouts. Staged, unstaged, and untracked changes are excluded.
 
-Options: `--head ref` (default `HEAD`), `--repo path`, `--model id` to override Codex's configured model, `--dry-run`, and `--output path`. Reports stay on your machine, but Codex sends the collected source to its model provider.
+Options: `--head ref` (default `HEAD`), `--repo path`, `--agent codex|claude`, `--model id` to override the agent's configured model, `--dry-run`, and `--output path`. Reports stay on your machine, but the agent sends the collected source to its model provider. Each pass records the model and usage when the agent reports them; Claude Code does, Codex does not.
 
 ## Other commands
 

@@ -4,7 +4,7 @@ import { parseReviewArguments } from "./review/input.js";
 const DEFAULT_OUTPUT = "apps/web/public/pr.json";
 
 export function usage(): string {
-  return `Usage: auto-review snapshot [number-or-url] [--output path]\n       auto-review index [repository-path] [--output path]\n       auto-review review --base ref [--head ref] [--repo path] [--model id] [--output report.json] [--dry-run]\n\nReview runs Codex against committed JS/TS changes. --dry-run writes context without invoking Codex.\n\nIndex writes a local Git checkout AST as JSON to stdout or --output.\n\nSnapshot fetches a pull request with GitHub CLI and writes a JSON snapshot.\nIf number-or-url is omitted, gh uses the pull request for the current branch.`;
+  return `Usage: auto-review snapshot [number-or-url] [--output path]\n       auto-review index [repository-path] [--output path]\n       auto-review review --base ref [--head ref] [--repo path] [--agent codex|claude] [--model id] [--output report.json] [--dry-run]\n\nReview runs Codex (default) or Claude Code against committed JS/TS changes. --dry-run writes context without invoking an agent.\n\nIndex writes a local Git checkout AST as JSON to stdout or --output.\n\nSnapshot fetches a pull request with GitHub CLI and writes a JSON snapshot.\nIf number-or-url is omitted, gh uses the pull request for the current branch.`;
 }
 
 export function parseArguments(args: string[]) {

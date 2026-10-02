@@ -20,7 +20,10 @@ export function isIndexablePath(file: string) {
  * `dependencyRoot` is a checkout with installed packages, used when `directory` is a fresh worktree.
  * Unresolvable tsconfig files fall back to default options and are listed in `configErrors`.
  */
-export async function indexRepository(directory: string, options: { dependencyRoot?: string } = {}) {
+export async function indexRepository(
+  directory: string,
+  options: { dependencyRoot?: string } = {},
+) {
   const { stdout: gitRoot } = await exec("git", [
     "-C",
     resolve(directory),

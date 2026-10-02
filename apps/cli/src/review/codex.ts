@@ -1,12 +1,8 @@
-import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-export type ModelRequest = { prompt: string; schema: object };
-export type ModelProvider = {
-  complete(request: ModelRequest): Promise<{ output: unknown; durationMs: number }>;
-};
+import { runAgent } from "./agent.js";
+import type { ModelProvider } from "./agent.js";
 
 /** Uses the user's Codex login and model configuration in a fresh read-only session per pass. */
 export function codexProvider(options: {
@@ -42,41 +38,14 @@ export function codexProvider(options: {
         ];
         if (options.model) args.push("--model", options.model);
         args.push("-");
-        await new Promise<void>((accept, reject) => {
-          const child = spawn(options.executable ?? "codex", args, {
-            stdio: ["pipe", "ignore", "pipe"],
-            signal: options.signal,
-          });
-          let stderr = "";
-          let timedOut = false;
-          const timer = setTimeout(() => {
-            timedOut = true;
-            child.kill("SIGKILL");
-          }, options.timeoutMs ?? 300_000);
-          child.stderr.on("data", (chunk: Buffer) => {
-            stderr = (stderr + chunk.toString()).slice(-4000);
-          });
-          child.stdin.on("error", () => {
-            /* The close/error events report early process exits. */
-          });
-          child.on("error", (error) => {
-            clearTimeout(timer);
-            if (options.signal?.aborted) reject(options.signal.reason);
-            else reject(new Error(`Could not start Codex: ${error.message}`));
-          });
-          child.on("close", (code) => {
-            clearTimeout(timer);
-            if (options.signal?.aborted) reject(options.signal.reason);
-            else if (timedOut) reject(new Error("Codex review pass timed out after its time limit."));
-            else if (code !== 0)
-              reject(
-                new Error(
-                  `Codex exited with code ${code}. Check 'codex login status' and your model configuration.\n${stderr}`,
-                ),
-              );
-            else accept();
-          });
-          child.stdin.end(request.prompt);
+        await runAgent({
+          name: "Codex",
+          executable: options.executable ?? "codex",
+          args,
+          prompt: request.prompt,
+          timeoutMs: options.timeoutMs,
+          signal: options.signal,
+          hint: "Check 'codex login status' and your model configuration.",
         });
         let result: unknown;
         try {

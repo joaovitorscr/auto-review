@@ -2,6 +2,7 @@ export function parseReviewArguments(args: string[]) {
   let base = "";
   let head = "HEAD";
   let repository = ".";
+  let agent: "codex" | "claude" = "codex";
   let model: string | undefined;
   let output = "";
   let dryRun = false;
@@ -11,7 +12,9 @@ export function parseReviewArguments(args: string[]) {
       dryRun = true;
       continue;
     }
-    if (!["--base", "--head", "--repo", "--model", "--output", "-o"].includes(option ?? ""))
+    if (
+      !["--base", "--head", "--repo", "--agent", "--model", "--output", "-o"].includes(option ?? "")
+    )
       throw new Error(`Unknown review option: ${option}`);
     const value = args[++index];
     if (!value || value.startsWith("-")) throw new Error(`${option} needs a value`);
@@ -25,6 +28,11 @@ export function parseReviewArguments(args: string[]) {
       case "--repo":
         repository = value;
         break;
+      case "--agent":
+        if (value !== "codex" && value !== "claude")
+          throw new Error(`--agent must be codex or claude, not ${value}`);
+        agent = value;
+        break;
       case "--model":
         model = value;
         break;
@@ -36,5 +44,5 @@ export function parseReviewArguments(args: string[]) {
     throw new Error(
       "review requires --base <branch-or-commit>. It reviews committed changes from the merge base to --head (default HEAD), excluding local edits.",
     );
-  return { command: "review" as const, base, head, repository, model, output, dryRun };
+  return { command: "review" as const, base, head, repository, agent, model, output, dryRun };
 }

@@ -13,6 +13,7 @@ import type {
 } from "@auto-review/github";
 import { withReviewContext } from "./review/git.js";
 import { codexProvider } from "./review/codex.js";
+import { claudeProvider } from "./review/claude.js";
 import { review, renderReview } from "./review/run.js";
 import { indexRepository } from "./repository-index.js";
 import { avatarUrl, fileDiffUrl, parseArguments, repositoryName } from "./input.js";
@@ -256,7 +257,10 @@ async function main(): Promise<void> {
         const save = async (result: object, label: string) => {
           const destination = args.output
             ? resolve(INVOKED_FROM, args.output)
-            : resolve(WORKSPACE_ROOT, `outputs/review-${context.head.slice(0, 12)}-${Date.now()}.json`);
+            : resolve(
+                WORKSPACE_ROOT,
+                `outputs/review-${context.head.slice(0, 12)}-${Date.now()}.json`,
+              );
           await mkdir(dirname(destination), { recursive: true });
           await writeFile(destination, `${JSON.stringify(result, null, 2)}\n`, "utf8");
           console.error(`Saved ${label} to ${destination}`);
@@ -266,11 +270,12 @@ async function main(): Promise<void> {
           else process.stdout.write(`${JSON.stringify(context, null, 2)}\n`);
           return;
         }
-        const provider = { name: "codex", requestedModel: args.model ?? null };
+        const provider = { name: args.agent, requestedModel: args.model ?? null };
+        const agent = args.agent === "claude" ? claudeProvider : codexProvider;
         try {
           const result = await review(
             context,
-            codexProvider({ checkout, model: args.model, signal: controller.signal }),
+            agent({ checkout, model: args.model, signal: controller.signal }),
             (message) => console.error(message),
           );
           await save({ ...result, provider }, "review report");

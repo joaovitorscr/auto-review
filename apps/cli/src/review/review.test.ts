@@ -8,7 +8,7 @@ import { packContext, parseHunks, reviewLines } from "./context.js";
 import type { ReviewContext } from "./context.js";
 import { withReviewContext } from "./git.js";
 import { review, renderReview } from "./run.js";
-import type { ModelProvider } from "./codex.js";
+import type { ModelProvider } from "./agent.js";
 
 const patch =
   "@@ -1,3 +1,3 @@\n export function amount(cents: number) {\n-  return cents / 100;\n+  return cents;\n }\n";
@@ -75,8 +75,15 @@ describe("review inputs and diff ranges", () => {
       command: "review",
       base: "main",
       head: "HEAD",
+      agent: "codex",
       dryRun: true,
     });
+    expect(parseArguments(["review", "--base", "main", "--agent", "claude"])).toMatchObject({
+      agent: "claude",
+    });
+    expect(() => parseArguments(["review", "--base", "main", "--agent", "gpt"])).toThrow(
+      "--agent must be codex or claude",
+    );
     expect(() => parseArguments(["review", "--base", "--head"])).toThrow("needs a value");
     expect(() => parseArguments(["review", "--base", "main", "--bogus"])).toThrow(
       "Unknown review option",
@@ -177,7 +184,7 @@ describe("counter-review", () => {
       ),
     ).rejects.toThrow("exactly one");
   });
-  it("skips validation with no findings, and skips Codex entirely with no supported changes", async () => {
+  it("skips validation with no findings, and skips the agent entirely with no supported changes", async () => {
     const negative = provider([{ findings: [] }]);
     expect((await review(context, negative.model)).findings).toEqual([]);
     expect(negative.prompts).toHaveLength(1);
