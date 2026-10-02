@@ -8,12 +8,15 @@ import { packContext, parseHunks, reviewLines } from "./context.js";
 import type { Change, ReviewContext } from "./context.js";
 
 const exec = promisify(execFile);
+// Docs, lockfiles, images and ignore files cannot change runtime behavior, so they do not make a review partial.
+const nonCode =
+  /(^|\/)(LICENSE|CODEOWNERS|\.gitignore|\.gitattributes|\.DS_Store|[^/]+\.(md|mdx|txt|lock|png|jpe?g|gif|svg|ico|webp)|pnpm-lock\.yaml|package-lock\.json)$/i;
 const git = async (root: string, args: string[]) =>
   (await exec("git", ["-C", root, ...args], { maxBuffer: 20 * 1024 * 1024 })).stdout;
 
 /** Builds context and runs the consumer against the same immutable head checkout. */
 export async function withReviewContext<T>(
-  options: { repository: string; base: string; head: string },
+  options: { repository: string; base: string; head: string; signal?: AbortSignal },
   consume: (context: ReviewContext, checkout: string) => Promise<T>,
 ) {
   const root = (await git(resolve(options.repository), ["rev-parse", "--show-toplevel"])).trim();
@@ -44,11 +47,12 @@ export async function withReviewContext<T>(
     const before = new Map<string, string>();
     const changes: Change[] = [];
     const skipped: string[] = [];
+    const ignored: string[] = [];
     for (let position = 0; position < changed.length - 1; position += 2) {
       const status = changed[position]!;
       const file = changed[position + 1]!;
       if (!isIndexablePath(file) || (status !== "D" && !after.has(file))) {
-        skipped.push(file);
+        (nonCode.test(file) ? ignored : skipped).push(file);
         continue;
       }
       if (status !== "A") before.set(file, await git(root, ["show", `${base}:${file}`]));
@@ -93,8 +97,9 @@ export async function withReviewContext<T>(
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
     }
+    options.signal?.throwIfAborted();
     return await consume(
-      packContext({ base, head, changes, index, before, after, instructions, skipped }),
+      packContext({ base, head, changes, index, before, after, instructions, skipped, ignored }),
       checkout,
     );
   } finally {
