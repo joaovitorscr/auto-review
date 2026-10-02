@@ -1,7 +1,11 @@
 {
   "split": "dev",
   "kind": "regression",
-  "file": "src/cart.ts",
-  "lines": [4, 10],
+  "locations": [
+    {
+      "file": "src/cart.ts",
+      "lines": [4, 10]
+    }
+  ],
   "note": "Total is no longer converted to cents; chargeRequest sends dollars to an API that expects integer cents."
 }
