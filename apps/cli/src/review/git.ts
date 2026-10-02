@@ -41,7 +41,7 @@ export async function withReviewContext<T>(
       head,
     ]);
     added = true;
-    const index = await indexRepository(checkout);
+    const index = await indexRepository(checkout, { dependencyRoot: root });
     const after = new Map<string, string>();
     for (const file of index.files) after.set(file, await readFile(join(checkout, file), "utf8"));
     const before = new Map<string, string>();
@@ -99,7 +99,18 @@ export async function withReviewContext<T>(
     }
     options.signal?.throwIfAborted();
     return await consume(
-      packContext({ base, head, changes, index, before, after, instructions, skipped, ignored }),
+      packContext({
+        base,
+        head,
+        changes,
+        index,
+        before,
+        after,
+        instructions,
+        skipped,
+        ignored,
+        configErrors: index.configErrors,
+      }),
       checkout,
     );
   } finally {

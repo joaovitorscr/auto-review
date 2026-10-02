@@ -15,8 +15,12 @@ export function isIndexablePath(file: string) {
   );
 }
 
-/** Indexes existing tracked and unignored JS/TS files in a local Git checkout. */
-export async function indexRepository(directory: string) {
+/**
+ * Indexes existing tracked and unignored JS/TS files in a local Git checkout.
+ * `dependencyRoot` is a checkout with installed packages, used when `directory` is a fresh worktree.
+ * Unresolvable tsconfig files fall back to default options and are listed in `configErrors`.
+ */
+export async function indexRepository(directory: string, options: { dependencyRoot?: string } = {}) {
   const { stdout: gitRoot } = await exec("git", [
     "-C",
     resolve(directory),
@@ -48,8 +52,13 @@ export async function indexRepository(directory: string) {
         throw error;
     }
   }
+  const dependencyRoot = options.dependencyRoot && resolve(options.dependencyRoot);
   const configPath = (path: string) => {
     if (ts.sys.fileExists(path)) return path;
+    if (dependencyRoot && path.startsWith(`${root}/`) && path.includes("/node_modules/")) {
+      const installed = join(dependencyRoot, path.slice(root.length + 1));
+      if (ts.sys.fileExists(installed)) return installed;
+    }
     for (const [name, directory] of workspacePackages) {
       const marker = `/node_modules/${name}/`;
       const offset = path.lastIndexOf(marker);
@@ -96,6 +105,7 @@ export async function indexRepository(directory: string) {
     calls: [],
     diagnostics: [],
   };
+  const configErrors: Array<{ config: string; message: string }> = [];
   for (const [config, files] of groups) {
     let options: ts.CompilerOptions = {
       module: ts.ModuleKind.NodeNext,
@@ -104,18 +114,21 @@ export async function indexRepository(directory: string) {
       jsx: ts.JsxEmit.Preserve,
     };
     if (config) {
-      const read = ts.readConfigFile(config, ts.sys.readFile);
-      if (read.error)
-        throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, "\n"));
-      const parsed = ts.parseJsonConfigFileContent(read.config, configHost, dirname(config));
-      const errors = parsed.errors.filter((error) => error.code !== 18003);
+      const read = ts.readConfigFile(config, configHost.readFile);
+      const parsed = read.error
+        ? undefined
+        : ts.parseJsonConfigFileContent(read.config, configHost, dirname(config));
+      const errors = read.error
+        ? [read.error]
+        : parsed!.errors.filter((error) => error.code !== 18003);
       if (errors.length)
-        throw new Error(
-          errors
+        configErrors.push({
+          config: config.slice(root.length + 1),
+          message: errors
             .map((error) => ts.flattenDiagnosticMessageText(error.messageText, "\n"))
             .join("\n"),
-        );
-      options = { ...options, ...parsed.options };
+        });
+      else options = { ...options, ...parsed!.options };
     }
     const program = ts.createProgram(files, { ...options, allowJs: true, noEmit: true });
     const indexed = indexProgram(program, root, paths);
@@ -131,5 +144,5 @@ export async function indexRepository(directory: string) {
   const ids = new Set(result.symbols.map((symbol) => symbol.id));
   for (const call of result.calls) if (call.target && !ids.has(call.target)) delete call.target;
   result.files.sort();
-  return { version: 1, ...result };
+  return { version: 1, ...result, configErrors };
 }

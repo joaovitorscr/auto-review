@@ -29,6 +29,7 @@ const context: ReviewContext = {
   instructions: [],
   skipped: [],
   ignored: [],
+  configErrors: [],
   omitted: [],
   diagnostics: [],
 };
@@ -200,6 +201,7 @@ describe("context budget", () => {
       instructions: [],
       skipped: [],
       ignored: [],
+      configErrors: [],
     };
     expect(packContext(input, 1000).omitted).not.toHaveLength(0);
     expect(() => packContext(input, 10)).toThrow("context budget");

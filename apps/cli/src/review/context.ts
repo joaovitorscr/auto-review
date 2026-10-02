@@ -60,6 +60,7 @@ export function packContext(
     instructions: Array<{ file: string; text: string }>;
     skipped: string[];
     ignored: string[];
+    configErrors: Array<{ config: string; message: string }>;
   },
   maxCharacters = 400_000,
 ) {
