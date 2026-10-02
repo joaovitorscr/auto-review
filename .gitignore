@@ -9,3 +9,4 @@ coverage/
 *.log
 *.tsbuildinfo
 apps/web/public/pr.json
+/outputs/

@@ -23,6 +23,9 @@ importers:
       '@auto-review/github':
         specifier: workspace:*
         version: link:../../packages/github
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
     devDependencies:
       '@types/node':
         specifier: ^24.10.0
@@ -30,9 +33,6 @@ importers:
       tsx:
         specifier: ^4.23.1
         version: 4.23.13
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
       vitest:
         specifier: ^4.1.0
         version: 4.1.11(@types/node@24.13.3)(@vitest/browser-preview@4.1.11)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(tsx@4.23.13))
