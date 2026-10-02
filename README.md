@@ -51,7 +51,10 @@ The dashboard shows PR snapshots (summary, timeline, and code). It does not disp
 vp check
 vp test
 vp run -r build
+pnpm eval --split all   # review the labeled cases in evals/ with both agents
 ```
+
+Each case in `evals/` is a small before/after repository with a label. The eval prints a table and saves the findings so a person can judge each one.
 
 ## License
 

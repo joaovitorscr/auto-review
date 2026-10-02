@@ -11,7 +11,16 @@ async function withExecutable(
   const directory = await mkdtemp(join(tmpdir(), "auto-review-process-test-"));
   const executable = join(directory, "fake-codex");
   try {
-    await writeFile(executable, `#!/usr/bin/env node\n${body}\n`);
+    await writeFile(
+      executable,
+      `#!/usr/bin/env node
+if (process.argv.includes("mcp")) {
+  console.log(JSON.stringify([{ name: "linear", enabled: true }, { name: "off", enabled: false }]));
+  process.exit(0);
+}
+${body}
+`,
+    );
     await chmod(executable, 0o755);
     await run(directory, executable);
   } finally {
@@ -52,6 +61,14 @@ process.stdin.on('end', () => {
             "configured-test-model",
           ]),
         );
+        expect(invocation.args.slice(0, 6)).toEqual([
+          "--disable",
+          "plugins",
+          "--disable",
+          "apps",
+          "-c",
+          "mcp_servers.linear.enabled=false",
+        ]);
         expect(invocation.schema).toEqual({ type: "object" });
         await expect(
           readFile(invocation.args[invocation.args.indexOf("--output-schema") + 1]),

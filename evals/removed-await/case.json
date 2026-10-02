@@ -1,0 +1,7 @@
+{
+  "split": "holdout",
+  "kind": "regression",
+  "file": "src/transfer.ts",
+  "lines": [3, 9],
+  "note": "transfer no longer awaits the debit; the caller reads the balance immediately and the debit can fail without the error reaching the caller."
+}

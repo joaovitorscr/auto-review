@@ -7,8 +7,8 @@ const citationSchema = {
   properties: {
     file: { type: "string" },
     revision: { type: "string", enum: ["base", "head"] },
-    startLine: { type: "integer" },
-    endLine: { type: "integer" },
+    startLine: { type: "integer", minimum: 1 },
+    endLine: { type: "integer", minimum: 1 },
   },
 };
 const auditSchema = {
@@ -24,7 +24,7 @@ const auditSchema = {
         required: ["claim", "evidenceIndices"],
         properties: {
           claim: { type: "string" },
-          evidenceIndices: { type: "array", items: { type: "integer" } },
+          evidenceIndices: { type: "array", items: { type: "integer", minimum: 1 } },
         },
       },
     },
@@ -73,7 +73,7 @@ export const findingsSchema = {
           severity: { type: "string", enum: ["critical", "high", "medium"] },
           confidence: { type: "number" },
           file: { type: "string" },
-          line: { type: "integer" },
+          line: { type: "integer", minimum: 1 },
           explanation: { type: "string" },
           scenario: { type: "string" },
           suggestedFix: { type: "string" },
@@ -96,7 +96,7 @@ export const validationSchema = {
         additionalProperties: false,
         required: ["candidateId", "verdict", "reason", "audit"],
         properties: {
-          candidateId: { type: "integer" },
+          candidateId: { type: "integer", minimum: 1 },
           verdict: { type: "string", enum: ["accept", "reject", "needs_more_context"] },
           reason: { type: "string" },
           audit: auditSchema,
@@ -118,7 +118,9 @@ const string = (value: unknown) => {
 };
 const integer = (value: unknown) => {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
-    throw new Error("Invalid line or candidate ID in agent response");
+    throw new Error(
+      `Invalid line, evidence index or candidate ID in agent response: ${JSON.stringify(value)}`,
+    );
   return value;
 };
 const array = (value: unknown) => {
