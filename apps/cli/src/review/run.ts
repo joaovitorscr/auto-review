@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ReviewContext } from "./context.js";
-import type { ModelProvider } from "./codex.js";
+import type { ModelProvider, ModelResponse } from "./agent.js";
 import {
   findingsSchema,
   parseDecisions,
@@ -33,7 +33,7 @@ export async function review(
     reason: string;
     validatorAudit?: ReturnType<typeof parseDecisions>[number]["audit"];
   }> = [];
-  const passes: Array<{ phase: string; durationMs: number }> = [];
+  const passes: Array<{ phase: string } & Omit<ModelResponse, "output">> = [];
   const coverage = {
     changedFiles: context.changes.map((change) => change.file),
     skippedFiles: context.skipped,
@@ -68,8 +68,9 @@ export async function review(
     schema: findingsSchema,
     prompt: `${rules}\n\nExamine data flow, boundaries, error handling, asynchronous state and user interactions. Compare before and after. Propose at most 10 strong findings. For each, give a short reproducible scenario, impact, source evidence, and a suggested fix. Anchor line to change.reviewLines on head. Entirely deleted files can support findings on other changed files but have no head anchor. Return {"findings":[]} when no supported bug is found.\n\nCONTEXT\n${serialized}`,
   });
-  passes.push({ phase: "detector", durationMs: detection.durationMs });
-  const candidates = parseFindings(detection.output).map((finding, index) => ({
+  const { output: detected, ...detectorPass } = detection;
+  passes.push({ phase: "detector", ...detectorPass });
+  const candidates = parseFindings(detected).map((finding, index) => ({
     candidateId: index + 1,
     finding,
   }));
@@ -90,8 +91,9 @@ export async function review(
       schema: validationSchema,
       prompt: `${rules}\n\nYou are the independent counter-reviewer. Try to disprove every candidate. Check whether the bug already existed, whether guards or callers defeat the scenario, and whether evidence establishes each step. Accept only when the change introduces the claimed reachable regression. Reject incorrect claims. Use needs_more_context when you cannot establish or disprove the claim. Return exactly one decision per candidateId. Do not rewrite findings. Give a brief evidence-based reason, not private reasoning.\n\nCANDIDATES\n${JSON.stringify(eligible)}\n\nCONTEXT\n${serialized}`,
     });
-    passes.push({ phase: "validator", durationMs: validation.durationMs });
-    const decisions = parseDecisions(validation.output);
+    const { output: validated, ...validatorPass } = validation;
+    passes.push({ phase: "validator", ...validatorPass });
+    const decisions = parseDecisions(validated);
     if (
       decisions.length !== eligible.length ||
       new Set(decisions.map((decision) => decision.candidateId)).size !== eligible.length ||
@@ -99,7 +101,7 @@ export async function review(
         (decision) => !eligible.some((candidate) => candidate.candidateId === decision.candidateId),
       )
     )
-      throw new Error("Codex validation did not return exactly one decision per candidate.");
+      throw new Error("Validation did not return exactly one decision per candidate.");
     for (const candidate of eligible) {
       const decision = decisions.find((entry) => entry.candidateId === candidate.candidateId)!;
       validateAuditReferences(decision.audit, candidate.finding.evidence.length);
