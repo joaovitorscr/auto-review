@@ -10,6 +10,7 @@ export function claudeProvider(options: {
   model?: string;
   executable?: string;
   timeoutMs?: number;
+  maxBudgetUsd?: number;
   signal?: AbortSignal;
 }): ModelProvider {
   return {
@@ -27,8 +28,17 @@ export function claudeProvider(options: {
         "dontAsk",
         "--no-session-persistence",
         "--strict-mcp-config",
+        // The default Claude Code system prompt is larger than a typical review context.
+        "--system-prompt",
+        "You are AutoReview, a read-only code reviewer. Follow the task in the user message.",
+        "--model",
+        options.model ?? "claude-opus-5-5",
+        "--effort",
+        "low",
+        // Caps one pass so a runaway exploration cannot drain the user's plan.
+        "--max-budget-usd",
+        String(options.maxBudgetUsd ?? 1.5),
       ];
-      if (options.model) args.push("--model", options.model);
       const stdout = await runAgent({
         name: "Claude Code",
         executable: options.executable ?? "claude",
