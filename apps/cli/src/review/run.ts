@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
+import { batchContext } from "./context.js";
 import type { ReviewContext } from "./context.js";
 import type { ModelProvider, ModelResponse } from "./agent.js";
 import {
@@ -29,7 +30,7 @@ Return JSON matching the supplied schema, without markdown or extra text.`;
 export async function review(
   context: ReviewContext,
   provider: ModelProvider,
-  options: { onProgress?: (message: string) => void; checkout?: string } = {},
+  options: { onProgress?: (message: string) => void; checkout?: string; maxParts?: number } = {},
 ) {
   const onProgress = options.onProgress ?? (() => {});
   const serialized = JSON.stringify(context);
@@ -73,14 +74,29 @@ export async function review(
     retrieved,
   };
   if (!context.changes.length) return { ...metadata, findings: [] as Finding[] };
-  onProgress("Looking for regressions in changed code and its callers...");
-  const detection = await provider.complete({
+  const batches = batchContext(context);
+  // Every part is a full model session on the user's plan, so large reviews stop before spending.
+  const maxParts = options.maxParts ?? 4;
+  if (batches.length > maxParts)
+    throw new Error(
+      `This change needs ${batches.length} review passes (limit ${maxParts}). Review a smaller commit range or raise maxParts.`,
+    );
+  const detected: unknown[] = [];
+  for (const [index, batch] of batches.entries()) {
+    onProgress(
+      batches.length > 1
+        ? `Looking for regressions in part ${index + 1} of ${batches.length}...`
+        : "Looking for regressions in changed code and its callers...",
+    );
+    const detection = await provider.complete({
     schema: findingsSchema,
-    prompt: `${rules}\n\nExamine data flow, boundaries, error handling, asynchronous state and user interactions. For every new or changed input check (request bodies, query params, CSV or file rows, form fields), find where the value ends up (database column types and constraints, parsers, external APIs) and ask whether some value passes the check but is rejected or misread there, for example a well-shaped but impossible date, an out-of-range number, or an over-long string. Compare before and after. Propose at most 10 strong findings. For each, give a short reproducible scenario, impact, source evidence, and a suggested fix. Anchor line to change.reviewLines on head. Entirely deleted files can support findings on other changed files but have no head anchor. Return {"findings":[]} when no supported bug is found.\n\nCONTEXT\n${serialized}`,
-  });
-  const { output: detected, ...detectorPass } = detection;
-  passes.push({ phase: "detector", ...detectorPass });
-  const candidates = parseFindings(detected).map((finding, index) => ({
+    prompt: `${rules}\n\nExamine data flow, boundaries, error handling, asynchronous state and user interactions. For every new or changed input check (request bodies, query params, CSV or file rows, form fields), find where the value ends up (database column types and constraints, parsers, external APIs) and ask whether some value passes the check but is rejected or misread there, for example a well-shaped but impossible date, an out-of-range number, or an over-long string. Compare before and after. Propose at most 10 strong findings. For each, give a short reproducible scenario, impact, source evidence, and a suggested fix. Anchor line to change.reviewLines on head. Entirely deleted files can support findings on other changed files but have no head anchor. Return {"findings":[]} when no supported bug is found.\n\nCONTEXT\n${JSON.stringify(batch)}`,
+    });
+    const { output, ...detectorPass } = detection;
+    passes.push({ phase: "detector", ...detectorPass });
+    detected.push(...parseFindings(output));
+  }
+  const candidates = (detected as Finding[]).map((finding, index) => ({
     candidateId: index + 1,
     finding,
   }));
@@ -118,7 +134,7 @@ export async function review(
     onProgress(`Trying to disprove ${eligible.length} candidate finding(s)...`);
     const validation = await provider.complete({
       schema: validationSchema,
-      prompt: `${rules}\n\nYou are the independent counter-reviewer. Try to disprove every candidate. Check whether the bug already existed, whether guards or callers defeat the scenario, and whether evidence establishes each step. Accept only when the change introduces the claimed reachable regression. Reject incorrect claims. Use needs_more_context when you cannot establish or disprove the claim. Return exactly one decision per candidateId. Do not rewrite findings. Give a brief evidence-based reason, not private reasoning.\n\nCANDIDATES\n${JSON.stringify(eligible)}\n\nRETRIEVED HEAD SOURCE CITED BY CANDIDATES\n${JSON.stringify(retrieved)}\n\nDIFF\n${JSON.stringify(context.changes)}\n\nThe full context snippets are omitted; read head files in your working directory when a check needs more.`,
+      prompt: `${rules}\n\nYou are the independent counter-reviewer. Try to disprove every candidate. Check whether the bug already existed, whether guards or callers defeat the scenario, and whether evidence establishes each step. Accept only when the change introduces the claimed reachable regression. Reject incorrect claims. Use needs_more_context when you cannot establish or disprove the claim. Return exactly one decision per candidateId. Do not rewrite findings. Give a brief evidence-based reason, not private reasoning.\n\nCANDIDATES\n${JSON.stringify(eligible)}\n\nRETRIEVED HEAD SOURCE CITED BY CANDIDATES\n${JSON.stringify(retrieved)}\n\nDIFF OF CANDIDATE FILES\n${JSON.stringify(context.changes.filter((change) => eligible.some((candidate) => candidate.finding.file === change.file)))}\n\nThe full context snippets are omitted; read head files in your working directory when a check needs more.`,
     });
     const { output: validated, ...validatorPass } = validation;
     passes.push({ phase: "validator", ...validatorPass });
