@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseArguments } from "../input.js";
-import { packContext, parseHunks, reviewLines } from "./context.js";
+import { batchContext, packContext, parseHunks, reviewLines } from "./context.js";
 import type { ReviewContext } from "./context.js";
 import { withReviewContext } from "./git.js";
 import { review, renderReview } from "./run.js";
@@ -239,6 +239,19 @@ describe("context budget", () => {
     };
     expect(packContext(input, 1000).omitted).not.toHaveLength(0);
     expect(() => packContext(input, 10)).toThrow("context budget");
+  });
+
+  it("splits large contexts so each detector pass keeps its own changed files", () => {
+    const changes = ["a.ts", "b.ts", "c.ts"].map((file) => ({ ...context.changes[0], file }));
+    const snippets = changes.map((change) => ({ ...context.snippets[0], file: change.file }));
+    const batches = batchContext({ ...context, changes, snippets }, 1200);
+    expect(batches.length).toBeGreaterThan(1);
+    expect(batches.flatMap((batch) => batch.changes.map((change) => change.file))).toEqual(["a.ts", "b.ts", "c.ts"]);
+    for (const batch of batches) {
+      expect(JSON.stringify(batch).length).toBeLessThanOrEqual(1200);
+      for (const change of batch.changes)
+        expect(batch.snippets.some((snippet) => snippet.file === change.file)).toBe(true);
+    }
   });
 });
 

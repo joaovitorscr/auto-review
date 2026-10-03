@@ -62,7 +62,7 @@ export function packContext(
     ignored: string[];
     configErrors: Array<{ config: string; message: string }>;
   },
-  maxCharacters = 80_000,
+  maxCharacters = 400_000,
 ) {
   const { index, before, after, ...metadata } = input;
   const snippets: Snippet[] = [];
@@ -169,3 +169,43 @@ export function packContext(
 }
 
 export type ReviewContext = ReturnType<typeof packContext>;
+
+/**
+ * Splits a context into detector-sized pieces: changed files are grouped greedily, each group
+ * gets its own hunk snippets first, then the remaining snippets in packing order until full.
+ */
+export function batchContext(context: ReviewContext, maxCharacters = 80_000) {
+  const size = (value: unknown) => JSON.stringify(value).length;
+  // Coverage lists stay in the report; the detector only needs code and instructions.
+  const shared = { base: context.base, head: context.head, instructions: context.instructions, skipped: context.skipped };
+  const fixed = size({ ...shared, changes: [], snippets: [] });
+  // Half of what is left after shared metadata goes to diffs, the rest to snippets.
+  const diffBudget = (maxCharacters - fixed) / 2;
+  if (diffBudget <= 0)
+    throw new Error("Instructions and file lists alone exceed the detector context budget.");
+  const groups: Array<typeof context.changes> = [];
+  let used = Infinity;
+  for (const change of context.changes) {
+    const cost = size(change);
+    if (used + cost > diffBudget) {
+      groups.push([]);
+      used = 0;
+    }
+    groups.at(-1)!.push(change);
+    used += cost;
+  }
+  return groups.map((changes) => {
+    const files = new Set(changes.map((change) => change.file));
+    const own = context.snippets.filter((snippet) => files.has(snippet.file));
+    const rest = context.snippets.filter((snippet) => !files.has(snippet.file));
+    let remaining = maxCharacters - fixed - size(changes);
+    const snippets = [];
+    for (const snippet of [...own, ...rest]) {
+      const cost = size(snippet);
+      if (cost > remaining) continue;
+      remaining -= cost;
+      snippets.push(snippet);
+    }
+    return { ...shared, changes, snippets };
+  });
+}
