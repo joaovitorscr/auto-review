@@ -72,7 +72,7 @@ export function codexProvider(options: {
           "--output-last-message",
           output,
         ];
-        if (options.model) args.push("--model", options.model);
+        args.push("--model", options.model ?? "gpt-6-astra", "-c", "model_reasoning_effort=low");
         args.push("-");
         await runAgent({
           name: "Codex",

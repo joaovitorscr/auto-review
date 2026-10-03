@@ -62,7 +62,7 @@ export function packContext(
     ignored: string[];
     configErrors: Array<{ config: string; message: string }>;
   },
-  maxCharacters = 400_000,
+  maxCharacters = 80_000,
 ) {
   const { index, before, after, ...metadata } = input;
   const snippets: Snippet[] = [];
