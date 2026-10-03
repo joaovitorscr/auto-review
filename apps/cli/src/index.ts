@@ -276,7 +276,7 @@ async function main(): Promise<void> {
           const result = await review(
             context,
             agent({ checkout, model: args.model, signal: controller.signal }),
-            (message) => console.error(message),
+            { onProgress: (message) => console.error(message), checkout },
           );
           await save({ ...result, provider }, "review report");
           process.stdout.write(renderReview(result));

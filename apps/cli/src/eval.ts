@@ -19,6 +19,8 @@ type Label = {
   split: "dev" | "holdout";
   note: string;
   source?: { repository: string; base: string; head: string };
+  // Another reviewer's comments on the same revisions, used to measure overlap with it.
+  reference?: { reviewer: string; comments: Array<{ file: string; line: number; severity: string; title: string }> };
 } & (
   | { kind: "regression"; locations: Array<{ file: string; lines: [number, number] }> }
   | { kind: "none" }
@@ -94,7 +96,7 @@ async function main() {
         try {
           const report = await withReviewContext(
             { repository, base: revisions.base, head: revisions.head },
-            (context, checkout) => review(context, agents[agent]({ checkout })),
+            (context, checkout) => review(context, agents[agent]({ checkout }), { checkout }),
           );
           const matches = (finding: { file: string; line: number }) =>
             label.kind === "regression" &&
@@ -105,6 +107,13 @@ async function main() {
                 finding.line <= location.lines[1],
             );
           const hit = report.findings.some(matches);
+          // A reference comment counts as found when an accepted finding lands within 15 lines of it.
+          const overlap = label.reference?.comments.map((comment) => ({
+            ...comment,
+            found: report.findings.some(
+              (finding) => finding.file === comment.file && Math.abs(finding.line - comment.line) <= 15,
+            ),
+          }));
           // The detector saw the bug, but the citation check or counter-review withheld it.
           const withheld = report.records.some(
             (record) => record.verdict !== "accept" && matches(record.finding),
@@ -115,6 +124,13 @@ async function main() {
             expected: label.kind,
             agent,
             // A suggestion for the human reviewer: matching location is not proof the finding is right.
+            reference: overlap && {
+              reviewer: label.reference!.reviewer,
+              found: overlap.filter((comment) => comment.found).length,
+              total: overlap.length,
+              comments: overlap,
+            },
+            passes: report.passes.map(({ phase, durationMs, model, usage }) => ({ phase, durationMs, model, usage })),
             outcome:
               label.kind === "regression"
                 ? hit
@@ -165,12 +181,12 @@ async function main() {
   await writeFile(destination, `${JSON.stringify(results, null, 2)}\n`, "utf8");
   const rows = results.map(
     (result) =>
-      `| ${result.case} | ${result.split} | ${result.expected} | ${result.agent} | ${result.outcome} | ${"extraFindings" in result ? result.extraFindings : "-"} | ${(result.durationMs / 1000).toFixed(0)}s | ${"costUsd" in result && result.costUsd !== undefined ? `$${result.costUsd.toFixed(2)}` : "-"} |`,
+      `| ${result.case} | ${result.split} | ${result.expected} | ${result.agent} | ${result.outcome} | ${"extraFindings" in result ? result.extraFindings : "-"} | ${(result.durationMs / 1000).toFixed(0)}s | ${"costUsd" in result && result.costUsd !== undefined ? `$${result.costUsd.toFixed(2)}` : "-"} | ${"reference" in result && result.reference ? `${result.reference.found}/${result.reference.total} of ${result.reference.reviewer}` : "-"} |`,
   );
   process.stdout.write(
     [
-      "| Case | Split | Expected | Agent | Outcome | Extra findings | Time | Cost |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| Case | Split | Expected | Agent | Outcome | Extra findings | Time | Cost | Reference |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
       ...rows,
       "",
       `Outcomes are location matches for a human to confirm. Full findings: ${destination}`,

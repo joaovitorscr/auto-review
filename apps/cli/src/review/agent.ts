@@ -41,7 +41,7 @@ export function runAgent(options: {
       stdout += chunk.toString();
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      stderr = (stderr + chunk.toString()).slice(-4000);
+      stderr = (stderr + chunk.toString()).slice(-1500);
     });
     child.stdin.on("error", () => {
       /* The close/error events report early process exits. */
@@ -57,7 +57,12 @@ export function runAgent(options: {
       else if (timedOut)
         reject(new Error(`${options.name} review pass timed out after its time limit.`));
       else if (code !== 0)
-        reject(new Error(`${options.name} exited with code ${code}. ${options.hint}\n${stderr}`));
+        // Claude Code reports failures as JSON on stdout and leaves stderr empty.
+        reject(
+          new Error(
+            `${options.name} exited with code ${code}. ${options.hint}\n${stderr || stdout.slice(-1500)}`,
+          ),
+        );
       else accept(stdout);
     });
     child.stdin.end(options.prompt);
