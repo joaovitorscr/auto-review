@@ -148,7 +148,7 @@ describe("counter-review", () => {
           finding,
           finding,
           { ...finding, line: 1 },
-          { ...finding, title: "Low confidence", confidence: 0.7 },
+          { ...finding, title: "Low confidence", confidence: 0.4 },
           {
             ...finding,
             title: "Invented evidence",
@@ -166,6 +166,33 @@ describe("counter-review", () => {
     expect(report.findings).toHaveLength(1);
     expect(report.records.filter((record) => record.verdict === "reject")).toHaveLength(4);
     expect(prompts).toHaveLength(2);
+  });
+  it("accepts head evidence the agent read from the checkout and rejects ranges that do not exist", async () => {
+    const checkout = await mkdtemp(join(tmpdir(), "auto-review-retrieved-"));
+    try {
+      await writeFile(join(checkout, "schema.ts"), "export const unit = 'dollars';\n");
+      const cite = (file: string, endLine: number) => ({
+        ...finding,
+        title: `Cites ${file}:${endLine}`,
+        evidence: [...finding.evidence, { file, revision: "head" as const, startLine: 1, endLine }],
+      });
+      const { model, prompts } = provider([
+        { findings: [cite("schema.ts", 1), cite("schema.ts", 9), cite("../outside.ts", 1)] },
+        {
+          decisions: [
+            { candidateId: 1, verdict: "accept", audit, reason: "The schema stores dollars." },
+          ],
+        },
+      ]);
+      const report = await review(context, model, { checkout });
+      expect(report.findings.map((entry) => entry.title)).toEqual(["Cites schema.ts:1"]);
+      expect(report.retrieved).toEqual([
+        { file: "schema.ts", startLine: 1, endLine: 1, text: "export const unit = 'dollars';" },
+      ]);
+      expect(prompts[1]).toContain("export const unit = 'dollars';");
+    } finally {
+      await rm(checkout, { recursive: true, force: true });
+    }
   });
   it("fails on malformed model output or incomplete validation rather than reporting a clean review", async () => {
     await expect(

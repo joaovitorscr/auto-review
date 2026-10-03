@@ -1,3 +1,4 @@
+import { normalize } from "node:path";
 import type { ReviewContext } from "./context.js";
 
 const citationSchema = {
@@ -224,14 +225,20 @@ export function parseDecisions(value: unknown) {
   });
 }
 
-export function unsupportedReason(finding: Finding, context: ReviewContext) {
+/** `retrieved` holds head ranges the agent read itself and that exist in the checkout. */
+export function unsupportedReason(
+  finding: Finding,
+  context: ReviewContext,
+  retrieved: ReadonlyArray<{ file: string; startLine: number; endLine: number }> = [],
+) {
   if (
     !context.changes.some(
       (change) => change.file === finding.file && change.reviewLines.includes(finding.line),
     )
   )
     return "Finding is not anchored to a changed head line or a deletion anchor.";
-  if (finding.confidence < 0.8) return "Confidence is below 0.8.";
+  // Low enough that the counter-review, not the detector's self-rating, decides borderline candidates.
+  if (finding.confidence < 0.5) return "Confidence is below 0.5.";
   if (!finding.evidence.length) return "Finding has no source evidence.";
   for (const citation of finding.evidence) {
     if (
@@ -241,9 +248,16 @@ export function unsupportedReason(finding: Finding, context: ReviewContext) {
           snippet.revision === citation.revision &&
           snippet.startLine <= citation.startLine &&
           snippet.endLine >= citation.endLine,
+      ) &&
+      !retrieved.some(
+        (entry) =>
+          entry.file === normalize(citation.file) &&
+          citation.revision === "head" &&
+          entry.startLine === citation.startLine &&
+          entry.endLine === citation.endLine,
       )
     )
-      return "Evidence is outside the supplied source ranges.";
+      return "Evidence is outside the supplied source ranges and the head checkout.";
   }
   return undefined;
 }
