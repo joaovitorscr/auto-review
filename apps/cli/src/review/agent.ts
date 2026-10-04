@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
 
 export type ModelRequest = { prompt: string; schema: object };
-/** Model and usage are reported only when the agent exposes them. */
+/** Model, turns and usage are reported only when the agent exposes them. */
 export type ModelResponse = {
   output: unknown;
   durationMs: number;
   model?: string;
+  turns?: number;
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
 export type ModelProvider = { complete(request: ModelRequest): Promise<ModelResponse> };

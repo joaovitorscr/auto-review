@@ -37,6 +37,7 @@ describe("Claude Code process adapter", () => {
         is_error: false,
         structured_output: { findings: [] },
         total_cost_usd: 0.02,
+        num_turns: 3,
         usage: {
           input_tokens: 4,
           cache_creation_input_tokens: 10,
@@ -57,6 +58,7 @@ describe("Claude Code process adapter", () => {
         expect(result).toMatchObject({
           output: { findings: [] },
           model: "claude-opus",
+          turns: 3,
           usage: { inputTokens: 20, outputTokens: 50, costUsd: 0.02 },
         });
         const invocation = JSON.parse(await readFile(join(directory, "invocation.json"), "utf8"));

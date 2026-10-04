@@ -55,6 +55,7 @@ export function claudeProvider(options: {
         result?: unknown;
         structured_output?: unknown;
         total_cost_usd?: number;
+        num_turns?: number;
         usage?: {
           input_tokens?: number;
           cache_creation_input_tokens?: number;
@@ -82,6 +83,7 @@ export function claudeProvider(options: {
         output: result.structured_output,
         durationMs: Date.now() - started,
         model,
+        turns: result.num_turns,
         usage: {
           inputTokens:
             result.usage &&
