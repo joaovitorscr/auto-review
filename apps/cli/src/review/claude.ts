@@ -34,7 +34,7 @@ export function claudeProvider(options: {
         "--model",
         options.model ?? "claude-opus-5-5",
         "--effort",
-        "low",
+        request.effort ?? "low",
         // Caps one pass so a runaway exploration cannot drain the user's plan.
         "--max-budget-usd",
         String(options.maxBudgetUsd ?? 1.5),

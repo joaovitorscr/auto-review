@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
-export type ModelRequest = { prompt: string; schema: object };
+/** Effort defaults to low; Codex ignores it. */
+export type ModelRequest = { prompt: string; schema: object; effort?: "low" | "medium" | "high" };
 /** Model, turns and usage are reported only when the agent exposes them. */
 export type ModelResponse = {
   output: unknown;
