@@ -7,6 +7,8 @@ export type ModelResponse = {
   durationMs: number;
   model?: string;
   turns?: number;
+  /** Tool calls in order, so evals can show what the agent read. */
+  toolCalls?: Array<{ name: string; input: unknown }>;
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
 export type ModelProvider = { complete(request: ModelRequest): Promise<ModelResponse> };

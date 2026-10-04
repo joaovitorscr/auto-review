@@ -18,8 +18,10 @@ export function claudeProvider(options: {
       const started = Date.now();
       const args = [
         "--print",
+        // Streams every message so tool calls can be recorded; the last line is the result.
         "--output-format",
-        "json",
+        "stream-json",
+        "--verbose",
         "--json-schema",
         JSON.stringify(request.schema),
         "--tools",
@@ -64,8 +66,18 @@ export function claudeProvider(options: {
         };
         modelUsage?: Record<string, { outputTokens?: number }>;
       };
+      const toolCalls: Array<{ name: string; input: unknown }> = [];
       try {
-        result = JSON.parse(stdout);
+        const events = stdout
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line));
+        for (const event of events)
+          if (event.type === "assistant")
+            for (const block of event.message?.content ?? [])
+              if (block.type === "tool_use")
+                toolCalls.push({ name: block.name, input: block.input });
+        result = events.at(-1);
       } catch {
         throw new Error("Claude Code did not produce a valid JSON result.");
       }
@@ -84,6 +96,7 @@ export function claudeProvider(options: {
         durationMs: Date.now() - started,
         model,
         turns: result.num_turns,
+        toolCalls,
         usage: {
           inputTokens:
             result.usage &&

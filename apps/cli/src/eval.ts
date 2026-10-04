@@ -140,7 +140,7 @@ async function main() {
               total: overlap.length,
               comments: overlap,
             },
-            passes: report.passes.map(({ phase, durationMs, model, turns, usage }) => ({ phase, durationMs, model, turns, usage })),
+            passes: report.passes.map(({ phase, durationMs, model, turns, toolCalls, usage }) => ({ phase, durationMs, model, turns, toolCalls, usage })),
             outcome:
               label.kind === "regression"
                 ? hit
