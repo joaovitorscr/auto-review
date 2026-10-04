@@ -170,6 +170,13 @@ export function packContext(
 
 export type ReviewContext = ReturnType<typeof packContext>;
 
+/** True when most lines are literal entries such as `key: "text",`. */
+function isData(text: string) {
+  const lines = text.split("\n").filter((line) => line.trim());
+  const entries = lines.filter((line) => /^\s*["'\w$-]+\s*:\s*(["'`]|\d|true|false|null)/.test(line));
+  return lines.length >= 20 && entries.length / lines.length > 0.6;
+}
+
 /**
  * Splits a context into detector-sized pieces: changed files are grouped greedily, each group
  * gets its own hunk snippets first, then the remaining snippets in packing order until full.
@@ -199,13 +206,24 @@ export function batchContext(context: ReviewContext, maxCharacters = 80_000) {
     const own = context.snippets.filter((snippet) => files.has(snippet.file));
     const rest = context.snippets.filter((snippet) => !files.has(snippet.file));
     let remaining = maxCharacters - fixed - size(changes);
-    const snippets = [];
-    for (const snippet of [...own, ...rest]) {
+    const snippets: typeof context.snippets = [];
+    // String tables and similar data say little about behavior, so they only fill leftover space.
+    const ordered = [...own, ...rest].sort((a, b) => Number(isData(a.text)) - Number(isData(b.text)));
+    for (const snippet of ordered) {
       const cost = size(snippet);
       if (cost > remaining) continue;
       remaining -= cost;
       snippets.push(snippet);
     }
-    return { ...shared, changes, snippets };
+    // Big rewrites arrive as a long patch with little surrounding code; the detector reads those itself.
+    const readFirst = changes
+      .filter((change) => {
+        const covered = snippets
+          .filter((snippet) => snippet.file === change.file && snippet.revision === "head")
+          .reduce((sum, snippet) => sum + snippet.text.length, 0);
+        return change.patch.length > 20_000 && covered < change.patch.length / 4;
+      })
+      .map((change) => change.file);
+    return { ...shared, changes, snippets, readFirst };
   });
 }
