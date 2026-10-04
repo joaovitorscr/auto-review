@@ -67,7 +67,6 @@ describe("Claude Code process adapter", () => {
         const args: string[] = invocation.args;
         expect(args[args.indexOf("--tools") + 1]).toBe("Read,Grep,Glob");
         expect(args[args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
-        expect(args[args.indexOf("--effort") + 1]).toBe("low");
         expect(args[args.indexOf("--json-schema") + 1]).toBe('{"type":"object"}');
         expect(args).toEqual(
           expect.arrayContaining([
