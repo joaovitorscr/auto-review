@@ -1,0 +1,5 @@
+{
+  "split": "dev",
+  "kind": "none",
+  "note": "saveProfile already ignored the write promise before this change; the diff only adds a log line. Reporting the missing await is a pre-existing issue."
+}
