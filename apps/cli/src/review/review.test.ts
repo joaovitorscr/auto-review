@@ -241,6 +241,16 @@ describe("context budget", () => {
     expect(() => packContext(input, 10)).toThrow("context budget");
   });
 
+  it("packs string tables after code and flags big rewrites with little context", () => {
+    const table = Array.from({ length: 30 }, (_, line) => `  key${line}: "text ${line}",`).join("\n");
+    const code = { ...context.snippets[0], file: "b.ts" };
+    const data = { ...context.snippets[0], file: "strings.ts", text: table };
+    const rewrite = { ...context.changes[0], patch: "+x\n".repeat(8000) };
+    const [batch] = batchContext({ ...context, changes: [rewrite], snippets: [data, code] }, 100_000);
+    expect(batch.snippets.findIndex((snippet) => snippet.file === "strings.ts")).toBeGreaterThan(batch.snippets.findIndex((snippet) => snippet.file === "b.ts"));
+    expect(batch.readFirst).toEqual(["amount.ts"]);
+  });
+
   it("splits large contexts so each detector pass keeps its own changed files", () => {
     const changes = ["a.ts", "b.ts", "c.ts"].map((file) => ({ ...context.changes[0], file }));
     const snippets = changes.map((change) => ({ ...context.snippets[0], file: change.file }));
