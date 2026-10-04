@@ -167,6 +167,16 @@ describe("counter-review", () => {
     expect(report.records.filter((record) => record.verdict === "reject")).toHaveLength(4);
     expect(prompts).toHaveLength(2);
   });
+  it("runs the counter-review with a separate validator provider when given one", async () => {
+    const detector = provider([{ findings: [finding] }]);
+    const validator = provider([
+      { decisions: [{ candidateId: 1, verdict: "accept", audit, reason: "Evidence supports the regression." }] },
+    ]);
+    const report = await review(context, detector.model, { validator: validator.model });
+    expect(report.findings).toHaveLength(1);
+    expect(detector.prompts).toHaveLength(1);
+    expect(validator.prompts[0]).toContain("Try to disprove");
+  });
   it("accepts head evidence the agent read from the checkout and rejects ranges that do not exist", async () => {
     const checkout = await mkdtemp(join(tmpdir(), "auto-review-retrieved-"));
     try {

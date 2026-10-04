@@ -12,7 +12,8 @@ import { review } from "./review/run.js";
 const WORKSPACE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 // evals/ cases are committed and inline; corpus/cases/ point at local clones and stay git-ignored.
 const CASE_ROOTS = [join(WORKSPACE_ROOT, "evals"), join(WORKSPACE_ROOT, "corpus", "cases")];
-const agents = { codex: codexProvider, claude: claudeProvider };
+// "codex+claude" detects with Codex and counter-reviews with Claude.
+const agents = { codex: codexProvider, claude: claudeProvider, "codex+claude": codexProvider };
 
 /** A case either has base/ and head/ trees beside it, or names a local repository and two revisions. */
 type Label = {
@@ -31,14 +32,14 @@ function parse(args: string[]) {
   for (let index = 0; index < args.length; index += 1) {
     const [option, value] = [args[index], args[index + 1] ?? ""];
     index += 1;
-    if (option === "--agent" && (value === "codex" || value === "claude"))
-      options.agents.push(value);
+    if (option === "--agent" && value in agents)
+      options.agents.push(value as keyof typeof agents);
     else if (option === "--split" && ["dev", "holdout", "all"].includes(value))
       options.split = value;
     else if (option === "--case" && value) options.only = value;
     else if (option !== "--")
       throw new Error(
-        "Usage: eval [--agent codex|claude]... [--split dev|holdout|all] [--case name]\nRuns the labeled cases in evals/ with each agent (default: both, dev split).",
+        "Usage: eval [--agent codex|claude|codex+claude]... [--split dev|holdout|all] [--case name]\nRuns the labeled cases in evals/ with each agent (default: both, dev split).",
       );
     else index -= 1;
   }
@@ -96,7 +97,11 @@ async function main() {
         try {
           const report = await withReviewContext(
             { repository, base: revisions.base, head: revisions.head },
-            (context, checkout) => review(context, agents[agent]({ checkout }), { checkout }),
+            (context, checkout) =>
+              review(context, agents[agent]({ checkout }), {
+                checkout,
+                validator: agent === "codex+claude" ? claudeProvider({ checkout }) : undefined,
+              }),
           );
           const matches = (finding: { file: string; line: number }) =>
             label.kind === "regression" &&
