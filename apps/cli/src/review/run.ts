@@ -90,8 +90,6 @@ export async function review(
     );
     const detection = await provider.complete({
     schema: findingsSchema,
-    // At low effort the detector tended to answer without reading readFirst files.
-    effort: "medium",
     prompt: `${rules}\n\nExamine data flow, boundaries, error handling, asynchronous state and user interactions. For every new or changed input check (request bodies, query params, CSV or file rows, form fields), find where the value ends up (database column types and constraints, parsers, external APIs) and ask whether some value passes the check but is rejected or misread there, for example a well-shaped but impossible date, an out-of-range number, or an over-long string. For changed UI code, check that state stays correct when its inputs change: state kept across a switch of route, account or selection that should reset, cache keys that no longer match what invalidation or refetch targets, refs or handlers created but never attached, and empty, loading or error branches that show the wrong message. Files in readFirst have long patches with little supplied context: read the head file around their changed lines, including where new state, errors and handlers are rendered or consumed, before concluding. Compare before and after. Propose at most 10 strong findings. For each, give a short reproducible scenario, impact, source evidence, and a suggested fix. Anchor line to change.reviewLines on head. Entirely deleted files can support findings on other changed files but have no head anchor. Return {"findings":[]} when no supported bug is found.\n\nCONTEXT\n${JSON.stringify(batch)}`,
     });
     const { output, ...detectorPass } = detection;
