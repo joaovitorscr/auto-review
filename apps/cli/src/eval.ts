@@ -112,21 +112,11 @@ async function main() {
                 finding.line <= location.lines[1],
             );
           const hit = report.findings.some(matches);
-          // A reference comment counts as found when an accepted finding lands within 15 lines of it or cites it.
+          // A reference comment counts as found when an accepted finding lands within 15 lines of it.
           const overlap = label.reference?.comments.map((comment) => ({
             ...comment,
             found: report.findings.some(
-              (finding) =>
-                (finding.file === comment.file && Math.abs(finding.line - comment.line) <= 15) ||
-                // A finding anchored at a caller still counts when a short citation covers the commented line.
-                finding.evidence.some(
-                  (entry) =>
-                    entry.revision === "head" &&
-                    entry.file === comment.file &&
-                    entry.endLine - entry.startLine < 10 &&
-                    entry.startLine <= comment.line &&
-                    entry.endLine >= comment.line,
-                ),
+              (finding) => finding.file === comment.file && Math.abs(finding.line - comment.line) <= 15,
             ),
           }));
           // The detector saw the bug, but the citation check or counter-review withheld it.
