@@ -93,6 +93,45 @@ describe("offline detector scope inventory", () => {
     expect(result.files[0]!.scopes[0]!.payload.supporting.map((entry) => entry.text)).toContain("const obj = { value };");
   });
 
+  it("keeps import declarations without collecting unrelated users of that import", () => {
+    const text = `import { shared } from "library";
+function changed() { return shared(); }
+function unrelated() { return shared("unrelated"); }`;
+    const scope = plan(text, {}, [2]).files[0]!.scopes[0]!;
+    const support = scope.payload.supporting.map((entry) => entry.text).join("\n");
+    expect(support).toContain('import { shared } from "library";');
+    expect(support).not.toContain("unrelated");
+    expect(scope.unresolved).toContain("shared");
+  });
+
+  it("replaces contained support when a complete enclosing excerpt fits", () => {
+    const text = `const value = 1;
+function helper() {
+  const copy = value;
+  return copy;
+}
+function changed() { return helper() + value; }`;
+    const scope = plan(text, {}, [6]).files[0]!.scopes[0]!;
+    const support = scope.payload.supporting;
+    expect(support.some((entry) => entry.text.includes("function helper()"))).toBe(true);
+    expect(support.some((entry) => entry.text === "const copy = value;")).toBe(false);
+    for (const entry of support)
+      expect(support.some((other) => other !== entry && other.start <= entry.start && other.end >= entry.end)).toBe(false);
+    expect(scope.characters).toBe(JSON.stringify(scope.payload).length);
+  });
+
+  it("compacts adjacent primary ranges and emits each enclosing range once", () => {
+    const result = plan(component, { primaryCharacters: 600, payloadCharacters: 4000 });
+    for (const scope of result.files[0]!.scopes) {
+      const parents = scope.payload.enclosing.map((entry) => `${entry.startLine}:${entry.endLine}`);
+      expect(new Set(parents).size).toBe(parents.length);
+      const spans = scope.payload.primary;
+      for (let i = 1; i < spans.length; i++) expect(spans[i]!.start).toBeGreaterThan(spans[i - 1]!.end);
+    }
+    const head = plan("const a = 1;\nconst b = 2;").files[0]!.scopes[0]!;
+    expect(head.payload.primary.map((entry) => entry.text)).toEqual(["const a = 1;\nconst b = 2;"]);
+  });
+
   it("is deterministic and validates budgets", () => {
     expect(plan(component)).toEqual(plan(component));
     expect(() => plan(component, { maxParts: 0 })).toThrow("positive integers");

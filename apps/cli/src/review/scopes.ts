@@ -35,6 +35,17 @@ export function planDetectorScopes(
       text: text.slice(start, end),
     });
     type Range = ReturnType<typeof range>;
+    // Adjacent source ranges can be represented once without hiding a gap or inventing code.
+    const compact = (ranges: Range[]) => {
+      const merged: Range[] = [];
+      for (const entry of [...ranges].sort((a, b) => a.start - b.start)) {
+        const previous = merged.at(-1);
+        if (previous && entry.start <= previous.end)
+          merged[merged.length - 1] = range(previous.start, Math.max(previous.end, entry.end));
+        else merged.push(entry);
+      }
+      return merged;
+    };
     const units: Array<{ ranges: Range[]; enclosing?: Range; label: string }> = [];
     const bodyOf = (node: ts.Node) => {
       if (ts.isFunctionDeclaration(node)) return node.body;
@@ -121,31 +132,34 @@ export function planDetectorScopes(
     const groups: Array<typeof targeted> = [];
     for (const unit of targeted) {
       const previous = groups.at(-1);
-      if (previous && size([...previous, unit].flatMap((entry) => entry.ranges)) <= primaryLimit)
+      if (previous && size(compact([...previous, unit].flatMap((entry) => entry.ranges))) <= primaryLimit)
         previous.push(unit);
       else groups.push([unit]);
     }
     const scopes = groups.map((group, index) => {
-      const primary = group.flatMap((unit) => unit.ranges);
+      const primary = compact(group.flatMap((unit) => unit.ranges));
       const inside = (node: ts.Node) => primary.some((entry) => node.getStart(source) >= entry.start && node.getEnd() <= entry.end);
       const symbols = new Set(identifiers.filter(({ node }) => inside(node)).map(({ symbol }) => symbol));
       for (const symbol of [...symbols]) for (const sibling of bindings.get(symbol) ?? []) symbols.add(sibling);
       const requests: Array<Range & { reason: string }> = [];
+      const imported = new Set<ts.Symbol>();
       const unresolved = new Set(unresolvedIdentifiers.filter(inside).map((node) => node.text));
       for (const symbol of symbols) {
         const declarations = symbol.declarations?.filter((node) => node.getSourceFile() === source) ?? [];
-        if (!declarations.length || declarations.some((node) => ts.isImportSpecifier(node) || ts.isImportClause(node) || ts.isNamespaceImport(node)))
-          unresolved.add(symbol.name);
+        if (declarations.some((node) => ts.isImportSpecifier(node) || ts.isImportClause(node) || ts.isNamespaceImport(node)))
+          imported.add(symbol);
+        if (!declarations.length || imported.has(symbol)) unresolved.add(symbol.name);
         for (const declaration of declarations) requests.push({ ...excerpt(declaration), reason: `declaration of ${symbol.name}` });
       }
       for (const { node, symbol } of identifiers)
-        if (symbols.has(symbol) && !inside(node)) requests.push({ ...excerpt(node), reason: `reference to ${symbol.name}` });
+        // Other uses of the same import are not consumers of this scope's changed behavior.
+        if (symbols.has(symbol) && !imported.has(symbol) && !inside(node)) requests.push({ ...excerpt(node), reason: `reference to ${symbol.name}` });
       const supporting: typeof requests = [];
-      const omitted: Array<{ startLine: number; endLine: number; reason: string }> = [];
-      const enclosing = group.flatMap((unit) => unit.enclosing ? [{
+      const omitted: Array<{ start: number; end: number; startLine: number; endLine: number; reason: string }> = [];
+      const enclosing = [...new Map(group.flatMap((unit) => unit.enclosing ? [[unit.enclosing.start, {
         startLine: unit.enclosing.startLine, endLine: unit.enclosing.endLine,
         note: "Primary ranges are excerpts, not a contiguous body. Intervening source is omitted unless separately supplied.",
-      }] : []);
+      }] as const] : [])).values()];
       const payload = {
         file: change.file, anchors: group.flatMap((unit) => unit.anchors),
         relatedChangedLines: [...new Set(group.flatMap((unit) => unit.touched))].sort((a, b) => a - b),
@@ -154,17 +168,20 @@ export function planDetectorScopes(
       // Prefer smaller complete statements; never truncate a condition or silently overflow the budget.
       for (const request of requests.sort((a, b) => a.text.length - b.text.length || a.start - b.start)) {
         if ([...primary, ...supporting].some((entry) => entry.start <= request.start && entry.end >= request.end)) continue;
-        if (omitted.some((entry) => entry.startLine === request.startLine && entry.endLine === request.endLine)) continue;
-        if (size({ ...payload, supporting: [...supporting, request] }) > payloadLimit) {
-          omitted.push({ startLine: request.startLine, endLine: request.endLine, reason: request.reason });
+        if (omitted.some((entry) => entry.start === request.start && entry.end === request.end)) continue;
+        const next = supporting.filter((entry) => !(request.start <= entry.start && request.end >= entry.end));
+        next.push(request);
+        if (size({ ...payload, supporting: next }) > payloadLimit) {
+          omitted.push({ start: request.start, end: request.end, startLine: request.startLine, endLine: request.endLine, reason: request.reason });
           continue;
         }
-        supporting.push(request);
+        supporting.splice(0, supporting.length, ...next);
       }
       return {
         id: `${change.file}:${index + 1}`, payload, characters: size(payload),
         oversized: size(primary) > primaryLimit || size(payload) > payloadLimit,
-        omitted, unresolved: [...unresolved].sort(),
+        omitted: omitted.filter((entry) => !compact([...primary, ...supporting]).some((covered) => covered.start <= entry.start && covered.end >= entry.end)),
+        unresolved: [...unresolved].sort(),
       };
     });
     return {
