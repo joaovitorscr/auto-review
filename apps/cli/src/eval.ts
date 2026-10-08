@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { claudeProvider } from "./review/claude.js";
 import { codexProvider } from "./review/codex.js";
 import { withReviewContext } from "./review/git.js";
-import { review } from "./review/run.js";
+import { prepareDetection, review } from "./review/run.js";
 
 const WORKSPACE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 // evals/ cases are committed and inline; corpus/cases/ point at local clones and stay git-ignored.
@@ -28,21 +28,28 @@ type Label = {
 );
 
 function parse(args: string[]) {
-  const options = { agents: [] as Array<keyof typeof agents>, split: "dev", only: "" };
+  const options = { agents: [] as Array<keyof typeof agents>, split: "dev", only: "", scoped: false, dryRun: false, maxParts: 4 };
   for (let index = 0; index < args.length; index += 1) {
     const [option, value] = [args[index], args[index + 1] ?? ""];
+    if (option === "--scoped" || option === "--dry-run") {
+      options[option === "--scoped" ? "scoped" : "dryRun"] = true;
+      continue;
+    }
     index += 1;
-    if (option === "--agent" && value in agents)
+    if (option === "--max-parts" && /^\d+$/.test(value) && Number(value) > 0) options.maxParts = Number(value);
+    else if (option === "--agent" && value in agents)
       options.agents.push(value as keyof typeof agents);
     else if (option === "--split" && ["dev", "holdout", "all"].includes(value))
       options.split = value;
     else if (option === "--case" && value) options.only = value;
     else if (option !== "--")
       throw new Error(
-        "Usage: eval [--agent codex|claude|codex+claude]... [--split dev|holdout|all] [--case name]\nRuns the labeled cases in evals/ with each agent (default: both, dev split).",
+        "Usage: eval [--agent codex|claude|codex+claude]... [--split dev|holdout|all] [--case name] [--scoped] [--dry-run] [--max-parts N]\nRuns the labeled cases in evals/ with each agent (default: both, dev split).",
       );
     else index -= 1;
   }
+  if (options.scoped && (!options.only || options.agents.length !== 1))
+    throw new Error("Experimental --scoped requires exactly one --case and one --agent.");
   if (!options.agents.length) options.agents = ["codex", "claude"];
   return options;
 }
@@ -91,15 +98,28 @@ async function main() {
       : await buildRepository(directory, name);
     const revisions = label.source ?? { base: "HEAD~1", head: "HEAD" };
     try {
+      if (options.dryRun) {
+        const summary = await withReviewContext(
+          { repository, base: revisions.base, head: revisions.head },
+          async (context, _checkout, sources) => {
+            const plan = prepareDetection(context, options.scoped ? sources : undefined, options.maxParts);
+            return { case: name, mode: plan.mode, scopeCount: plan.scopeCount, detectorPasses: plan.batches.length, validatorPasses: "0 or 1", payloadCharacters: plan.batches.map((batch) => JSON.stringify(batch).length), omittedContext: plan.context.omitted };
+          },
+        );
+        process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+        continue;
+      }
       for (const agent of options.agents) {
         console.error(`${name} with ${agent}...`);
         const started = Date.now();
         try {
           const report = await withReviewContext(
             { repository, base: revisions.base, head: revisions.head },
-            (context, checkout) =>
+            (context, checkout, sources) =>
               review(context, agents[agent]({ checkout }), {
                 checkout,
+                scopedSources: options.scoped ? sources : undefined,
+                maxParts: options.maxParts,
                 validator: agent === "codex+claude" ? claudeProvider({ checkout }) : undefined,
               }),
           );
@@ -149,6 +169,9 @@ async function main() {
             extraFindings: report.findings.filter((finding) => !matches(finding)).length,
             findings: report.findings,
             status: report.status,
+            detectionMode: report.detectionMode,
+            scopeCount: report.scopeCount,
+            coverage: report.coverage,
             withheld: report.records
               .filter((record) => record.verdict !== "accept")
               .map(({ finding, verdict, reason }) => ({
@@ -181,6 +204,7 @@ async function main() {
       if (!label.source) await rm(repository, { recursive: true, force: true });
     }
   }
+  if (options.dryRun) return;
   const destination = join(WORKSPACE_ROOT, "outputs", `eval-${Date.now()}.json`);
   await mkdir(dirname(destination), { recursive: true });
   await writeFile(destination, `${JSON.stringify(results, null, 2)}\n`, "utf8");
