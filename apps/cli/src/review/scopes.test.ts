@@ -132,6 +132,16 @@ function changed() { return helper() + value; }`;
     expect(head.payload.primary.map((entry) => entry.text)).toEqual(["const a = 1;\nconst b = 2;"]);
   });
 
+  it("splits an oversized class into bounded member regions without losing changed anchors", () => {
+    const text = `class Store {\n${Array.from({ length: 12 }, (_, i) => `  method${i}() { return "${"x".repeat(150)}"; }`).join("\n")}\n}`;
+    const result = plan(text, { primaryCharacters: 1500 });
+    expect(result.boundedHeadCoverage).toBe(true);
+    const scopes = result.files[0]!.scopes;
+    expect(scopes.length).toBeGreaterThan(1);
+    expect(scopes.flatMap((scope) => scope.payload.anchors).sort((a, b) => a - b)).toEqual(text.split("\n").map((_, i) => i + 1));
+    expect(scopes.flatMap((scope) => scope.payload.primary).map((entry) => entry.text).join("\n")).toContain("method11");
+  });
+
   it("is deterministic and validates budgets", () => {
     expect(plan(component)).toEqual(plan(component));
     expect(() => plan(component, { maxParts: 0 })).toThrow("positive integers");

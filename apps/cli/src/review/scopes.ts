@@ -48,7 +48,7 @@ export function planDetectorScopes(
     };
     const units: Array<{ ranges: Range[]; enclosing?: Range; label: string }> = [];
     const bodyOf = (node: ts.Node) => {
-      if (ts.isFunctionDeclaration(node)) return node.body;
+      if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node) || ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node)) return node.body;
       if (!ts.isVariableStatement(node) || node.declarationList.declarations.length !== 1) return;
       const initializer = node.declarationList.declarations[0]?.initializer;
       const callable = initializer && ts.isCallExpression(initializer)
@@ -57,17 +57,17 @@ export function planDetectorScopes(
       if (callable && (ts.isArrowFunction(callable) || ts.isFunctionExpression(callable)) && ts.isBlock(callable.body))
         return callable.body;
     };
-    const partition = (node: ts.Statement, enclosing?: Range) => {
+    const partition = (node: ts.Node, enclosing?: Range) => {
       const own = range(node.getStart(source), node.getEnd());
-      const body = bodyOf(node);
-      if (size(own) <= primaryLimit || !body?.statements.length) {
+      const children = ts.isClassDeclaration(node) ? node.members : bodyOf(node)?.statements;
+      if (size(own) <= primaryLimit || !children?.length) {
         units.push({ ranges: [own], enclosing, label: ts.SyntaxKind[node.kind] });
         return;
       }
       // Preserve wrapper/dependency-array text separately, with explicit holes for its body statements.
       const residual: Range[] = [];
       let cursor = own.start;
-      for (const statement of body.statements) {
+      for (const statement of children) {
         const start = statement.getStart(source);
         if (start > cursor) residual.push(range(cursor, start));
         partition(statement, own);

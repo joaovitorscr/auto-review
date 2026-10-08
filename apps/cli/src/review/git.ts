@@ -17,7 +17,7 @@ const git = async (root: string, args: string[]) =>
 /** Builds context and runs the consumer against the same immutable head checkout. */
 export async function withReviewContext<T>(
   options: { repository: string; base: string; head: string; signal?: AbortSignal },
-  consume: (context: ReviewContext, checkout: string) => Promise<T>,
+  consume: (context: ReviewContext, checkout: string, sources: { before: ReadonlyMap<string, string>; after: ReadonlyMap<string, string> }) => Promise<T>,
 ) {
   const root = (await git(resolve(options.repository), ["rev-parse", "--show-toplevel"])).trim();
   const resolveCommit = async (ref: string) =>
@@ -112,6 +112,7 @@ export async function withReviewContext<T>(
         configErrors: index.configErrors,
       }),
       checkout,
+      { before, after },
     );
   } finally {
     if (added) await git(root, ["worktree", "remove", "--force", checkout]);
