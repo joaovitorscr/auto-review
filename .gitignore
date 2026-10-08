@@ -1,0 +1,14 @@
+.env
+.env.*
+docs/
+node_modules/
+.venv/
+dist/
+coverage/
+.cache/
+*.log
+*.tsbuildinfo
+apps/web/public/pr.json
+/outputs/
+.DS_Store
+/corpus/
