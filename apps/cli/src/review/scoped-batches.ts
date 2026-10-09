@@ -1,3 +1,4 @@
+import { baseComparisons } from "./base-comparisons.js";
 import type { ReviewContext } from "./context.js";
 import { planDetectorScopes } from "./scopes.js";
 
@@ -60,13 +61,31 @@ export function scopedDetectorBatches(
         if (start < 1 || end > before.length) throw new Error(`Invalid base coordinates for ${file.file}:${start}-${end}`);
         return { file: file.file, revision: "base" as const, startLine: start, endLine: end, reason: "scoped diff evidence", text: before.slice(start - 1, end).join("\n") };
       });
-      baseEvidence.push(...base);
-      const payload = { id: scope.id, ...scope.payload, diff, base, omitted: [...scope.omitted], unresolved: scope.unresolved };
+      const comparisonOmissions: string[] = [];
+      let comparisonCharacters = 0;
+      for (const entry of baseComparisons(file.file, sources.before.get(file.file) ?? "", scope.payload.primary.map((part) => part.text))) {
+        if (base.some((covered) => covered.startLine <= entry.startLine && covered.endLine >= entry.endLine)) continue;
+        if (comparisonCharacters + JSON.stringify(entry).length > 12_000) {
+          comparisonOmissions.push(`${scope.id}:base:${file.file}:${entry.startLine}-${entry.endLine}`);
+          continue;
+        }
+        comparisonCharacters += JSON.stringify(entry).length;
+        base.push(entry);
+      }
+      const payload = { id: scope.id, ...scope.payload, diff, base, comparisonOmissions, omitted: [...scope.omitted], unresolved: scope.unresolved };
       // Reserve room for immutable diff/base evidence before spending space on optional support.
       while (JSON.stringify({ ...shared, scopes: [payload] }).length > maxCharacters && payload.supporting.length) {
         const entry = payload.supporting.pop()!;
         payload.omitted.push({ start: entry.start, end: entry.end, startLine: entry.startLine, endLine: entry.endLine, reason: "support excluded to fit diff/base evidence" });
       }
+      // Comparison leads are optional; the original diff evidence is mandatory.
+      while (JSON.stringify({ ...shared, scopes: [payload] }).length > maxCharacters && base.some((entry) => entry.reason.startsWith("Comparison lead"))) {
+        const index = base.findLastIndex((entry) => entry.reason.startsWith("Comparison lead"));
+        const [entry] = base.splice(index, 1);
+        comparisonOmissions.push(`${scope.id}:base:${file.file}:${entry!.startLine}-${entry!.endLine}`);
+      }
+      baseEvidence.push(...base);
+      omitted.push(...comparisonOmissions);
       headEvidence.push(...[...payload.primary, ...payload.supporting].map((entry) => ({ file: file.file, revision: "head" as const, startLine: entry.startLine, endLine: entry.endLine, text: headSource.split("\n").slice(entry.startLine - 1, entry.endLine).join("\n"), reason: "scoped head evidence" })));
       omitted.push(...payload.omitted.map((entry) => `${scope.id}:head:${file.file}:${entry.startLine}-${entry.endLine}`));
       omitted.push(...scope.unresolved.map((name) => `${scope.id}:unresolved:${name}`));
