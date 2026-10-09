@@ -7,7 +7,7 @@ import { parseArguments } from "../input.js";
 import { batchContext, packContext, parseHunks, reviewLines } from "./context.js";
 import type { ReviewContext } from "./context.js";
 import { withReviewContext } from "./git.js";
-import { review, renderReview } from "./run.js";
+import { review, renderReview, validationContext } from "./run.js";
 import type { ModelProvider } from "./agent.js";
 
 const patch =
@@ -100,6 +100,24 @@ describe("review inputs and diff ranges", () => {
 });
 
 describe("counter-review", () => {
+  it("supplies uncited cross-file counterevidence and makes budget omissions explicit", async () => {
+    const independent = { file: "probe.ts", revision: "head" as const, startLine: 1, endLine: 1,
+      text: "export const probe = () => readUsage(process.env);", reason: "caller" };
+    const input = { ...context, snippets: [...context.snippets, independent] };
+    const { model, prompts } = provider([
+      { findings: [finding] },
+      { decisions: [{ candidateId: 1, verdict: "needs_more_context", reason: "Identity unresolved", audit }] },
+    ]);
+    await review(input, model);
+    expect(prompts[1]).toContain(independent.text);
+    expect(prompts[1]).toContain("trace the identity and configuration");
+    const budget = JSON.stringify(independent).length + 1;
+    expect(validationContext(input, budget, ["probe.ts"]).snippets).toEqual([independent]);
+    expect(validationContext(input, 1)).toEqual({ snippets: [], omitted: [
+      "validator:head:amount.ts:1-3", "validator:head:probe.ts:1-1",
+    ] });
+  });
+
   it("publishes accepted candidates and keeps rejected and uncertain decisions", async () => {
     const { model, prompts } = provider([
       {

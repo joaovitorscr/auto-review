@@ -34,6 +34,25 @@ describe("scoped detection", () => {
     expect(prepareDetection(context).mode).toBe("file");
   });
 
+  it("pairs rewritten consumers with complete base implementations outside their diff rows", () => {
+    const before = 'function OldView() { return <Usage error={error} windows={windows} />; }\nconst old = 1;\n';
+    const after = 'const old = 1;\nfunction Summary() { return <Usage error={error} windows={windows} compact />; }\n';
+    const { context, sources } = fixture(before, after, '@@ -2 +1,2 @@\n const old = 1;\n+function Summary() { return <Usage error={error} windows={windows} compact />; }\n');
+    context.changes[0]!.file = "view.tsx";
+    sources.before = new Map([["view.tsx", before]]);
+    sources.after = new Map([["view.tsx", after]]);
+    const result = scopedDetectorBatches(context, sources);
+    expect(result.batches[0]!.scopes[0]!.base).toContainEqual(expect.objectContaining({
+      startLine: 1, endLine: 1, text: before.split("\n")[0], reason: expect.stringContaining("Comparison lead"),
+    }));
+    expect(result.baseEvidence).toContainEqual(expect.objectContaining({ startLine: 1, text: before.split("\n")[0] }));
+    sources.before.set("view.tsx", before.replace("return <Usage", `const padding = "${"x".repeat(13_000)}"; return <Usage`));
+    const bounded = scopedDetectorBatches(context, sources);
+    expect(bounded.omitted).toContain("view.tsx:1:base:view.tsx:1-1");
+    expect(bounded.batches.every((batch) => JSON.stringify(batch).length <= 80_000)).toBe(true);
+    expect(bounded.baseEvidence.some((entry) => entry.reason === "scoped diff evidence")).toBe(true);
+  });
+
   it("sends the scoped prompt only when opted in, with a fake provider", async () => {
     const { context, sources } = fixture();
     const complete = vi.fn(async () => ({ output: { findings: [] }, durationMs: 1 }));

@@ -35,6 +35,24 @@ describe("offline detector scope inventory", () => {
     expect(result.modelReady).toBe(false);
   });
 
+  it("keeps inline JSX consumers and the captured state of referenced handlers", () => {
+    const text = `function View() {
+  const [active, setActive] = useState("A");
+  const handle = async (next: string) => {
+    const previous = active;
+    try { await save(next); } catch { setActive(previous); }
+  };
+  const padding = "${"x".repeat(900)}";
+  return <section>{ready ? (<Select value={active} disabled={false} onChange={(next) => handle(next)} />) : null}</section>;
+}`;
+    const handler = plan(text, { primaryCharacters: 500, payloadCharacters: 5000 }, [4]).files[0]!.scopes[0]!;
+    expect(handler.payload.supporting.map((entry) => entry.text).join("\n")).toContain('ready ? (<Select value={active} disabled={false} onChange={(next) => handle(next)} />) : null');
+    const consumer = plan(text, { primaryCharacters: 500, payloadCharacters: 5000 }, [8]).files[0]!.scopes[0]!;
+    const support = consumer.payload.supporting.map((entry) => entry.text).join("\n");
+    expect(support).toContain("const previous = active;");
+    expect(support).toContain("catch { setActive(previous); }");
+  });
+
   it("owns each anchor once, marks large unsplit statements, and does not hide excess parts", () => {
     const result = plan(component, { primaryCharacters: 400, payloadCharacters: 1200, maxParts: 1 });
     const file = result.files[0]!;

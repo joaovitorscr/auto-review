@@ -43,7 +43,28 @@ Return JSON matching the supplied schema, without markdown or extra text.`;
 // Only the counter-review applies the acceptance bar; the detector proposes candidates for it.
 const judgeRules = `Accept only actionable bugs with a reachable scenario and material impact.
 The AST graph is incomplete. Unresolved calls and missing context do not prove a bug; look for the missing context before abstaining. If evidence is still insufficient, abstain.
-Missing safeguards in supplied snippets do not prove their absence elsewhere.`;
+Missing safeguards in supplied snippets do not prove their absence elsewhere.
+For error/remedy or account mismatch claims, trace the identity and configuration used by the failing operation and by the proposed remedy. A selected account label alone does not establish which credentials produced an error. Address counterevidence explicitly, and use needs_more_context when provenance remains unresolved.`;
+
+/** Preserve independent context for counter-checks, with explicit omissions at the budget. */
+export function validationContext(context: ReviewContext, maxCharacters = 80_000, preferredFiles: string[] = []) {
+  const snippets: ReviewContext["snippets"] = [];
+  const omitted = [...context.omitted];
+  let characters = 0;
+  const preferred = new Set(preferredFiles);
+  for (const entry of [...context.snippets].sort((a, b) => Number(preferred.has(b.file)) - Number(preferred.has(a.file)))) {
+    if (snippets.some((other) => other.file === entry.file && other.revision === entry.revision &&
+        other.startLine <= entry.startLine && other.endLine >= entry.endLine)) continue;
+    const size = JSON.stringify(entry).length + 1;
+    if (characters + size > maxCharacters) {
+      omitted.push(`validator:${entry.revision}:${entry.file}:${entry.startLine}-${entry.endLine}`);
+      continue;
+    }
+    snippets.push(entry);
+    characters += size;
+  }
+  return { snippets, omitted };
+}
 
 /**
  * Runs the detector and counter-review passes.
@@ -159,9 +180,14 @@ export async function review(
   }
   if (eligible.length) {
     onProgress(`Trying to disprove ${eligible.length} candidate finding(s)...`);
+    const candidateFiles = new Set(eligible.flatMap(({ finding }) => [finding.file, ...finding.evidence.map((entry) => entry.file)]));
+    const relatedFiles = batches.flatMap((batch) => {
+      const files = "scopes" in batch ? batch.scopes.map((scope) => scope.file) : batch.changes.map((change) => change.file);
+      return files.some((file) => candidateFiles.has(file)) ? files : [];
+    });
     const validation = await (options.validator ?? provider).complete({
       schema: validationSchema,
-      prompt: `${rules}\n${judgeRules}\n\nYou are the independent counter-reviewer. Try to disprove every candidate. Check whether the bug already existed, whether guards or callers defeat the scenario, and whether evidence establishes each step. Accept only when the change introduces the claimed reachable regression. A request any authenticated client can send counts as reachable even when the bundled UI never sends it: new validation that lets malformed input crash with a 500 instead of a 4xx is a material bug. Reject incorrect claims. Use needs_more_context when you cannot establish or disprove the claim. Return exactly one decision per candidateId. Do not rewrite findings. Give a brief evidence-based reason, not private reasoning.\n\nCANDIDATES\n${JSON.stringify(eligible)}\n\nRETRIEVED HEAD SOURCE CITED BY CANDIDATES\n${JSON.stringify(retrieved)}\n\nDIFF OF CANDIDATE FILES\n${JSON.stringify(context.changes.filter((change) => eligible.some((candidate) => candidate.finding.file === change.file)))}\n\nThe full context snippets are omitted; read head files in your working directory when a check needs more.`,
+      prompt: `${rules}\n${judgeRules}\n\nYou are the independent counter-reviewer. Try to disprove every candidate. Check whether the bug already existed, whether guards or callers defeat the scenario, and whether evidence establishes each step. Accept only when the change introduces the claimed reachable regression. A request any authenticated client can send counts as reachable even when the bundled UI never sends it: new validation that lets malformed input crash with a 500 instead of a 4xx is a material bug. Reject incorrect claims. Use needs_more_context when you cannot establish or disprove the claim. Return exactly one decision per candidateId. Do not rewrite findings. Give a brief evidence-based reason, not private reasoning.\n\nCANDIDATES\n${JSON.stringify(eligible)}\n\nRETRIEVED HEAD SOURCE CITED BY CANDIDATES\n${JSON.stringify(retrieved)}\n\nDIFF OF CANDIDATE FILES\n${JSON.stringify(context.changes.filter((change) => eligible.some((candidate) => candidate.finding.file === change.file)))}\n\nINDEPENDENT CONTEXT FOR COUNTER-CHECKS\n${JSON.stringify(validationContext(context, 80_000, relatedFiles))}\n\nConsider this context even when candidates did not cite it. Base comparison leads are not proof of equivalence. Read head files when a check needs more; omitted context is not evidence of absent behavior.`,
     });
     const { output: validated, ...validatorPass } = validation;
     passes.push({ phase: "validator", ...validatorPass });

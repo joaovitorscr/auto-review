@@ -109,14 +109,34 @@ export function planDetectorScopes(
       });
       for (const symbol of siblings) bindings.set(symbol, siblings);
     });
-    // The outer statement inside a function retains if/try/loop conditions and JSX render guards.
+    // Inline callbacks belong to their JSX consumer; nested handlers retain captured state.
     const excerpt = (node: ts.Node) => {
       let statement: ts.Node = node;
+      let consumer: ts.Node | undefined;
       for (let parent = node.parent; parent && parent !== source; parent = parent.parent) {
-        if (ts.isFunctionLike(parent) || (ts.isBlock(parent) && ts.isFunctionLike(parent.parent))) break;
+        if (ts.isJsxSelfClosingElement(parent) || ts.isJsxElement(parent)) {
+          if (consumer) break;
+          consumer = parent;
+          continue;
+        }
+        if (consumer) {
+          if (ts.isJsxExpression(parent) || ts.isConditionalExpression(parent) || ts.isBinaryExpression(parent) ||
+              ts.isReturnStatement(parent) || ts.isIfStatement(parent) || ts.isParenthesizedExpression(parent)) {
+            consumer = parent;
+            continue;
+          }
+          break;
+        }
+        if (ts.isFunctionLike(parent)) {
+          if ((ts.isArrowFunction(parent) || ts.isFunctionExpression(parent)) &&
+              (ts.isCallExpression(parent.parent) || ts.isVariableDeclaration(parent.parent) || ts.isJsxExpression(parent.parent))) continue;
+          if (ts.isFunctionDeclaration(parent) && parent.parent !== source) return range(parent.getStart(source), parent.getEnd());
+          break;
+        }
         if (ts.isStatement(parent)) statement = parent;
       }
-      return range(statement.getStart(source), statement.getEnd());
+      const selected = consumer ?? statement;
+      return range(selected.getStart(source), selected.getEnd());
     };
     const assigned = new Set<number>();
     const targeted = units.sort((a, b) =>
@@ -142,6 +162,7 @@ export function planDetectorScopes(
       const symbols = new Set(identifiers.filter(({ node }) => inside(node)).map(({ symbol }) => symbol));
       for (const symbol of [...symbols]) for (const sibling of bindings.get(symbol) ?? []) symbols.add(sibling);
       const requests: Array<Range & { reason: string }> = [];
+      const preferred = new Set<string>();
       const imported = new Set<ts.Symbol>();
       const unresolved = new Set(unresolvedIdentifiers.filter(inside).map((node) => node.text));
       for (const symbol of symbols) {
@@ -149,11 +170,22 @@ export function planDetectorScopes(
         if (declarations.some((node) => ts.isImportSpecifier(node) || ts.isImportClause(node) || ts.isNamespaceImport(node)))
           imported.add(symbol);
         if (!declarations.length || imported.has(symbol)) unresolved.add(symbol.name);
-        for (const declaration of declarations) requests.push({ ...excerpt(declaration), reason: `declaration of ${symbol.name}` });
+        for (const declaration of declarations) {
+          const entry = excerpt(declaration);
+          requests.push({ ...entry, reason: `declaration of ${symbol.name}` });
+          if ((ts.isFunctionDeclaration(declaration) && declaration.parent !== source) || (ts.isVariableDeclaration(declaration) && declaration.initializer &&
+              (ts.isArrowFunction(declaration.initializer) || ts.isFunctionExpression(declaration.initializer) ||
+               (ts.isCallExpression(declaration.initializer) && declaration.initializer.arguments.some((arg) => ts.isArrowFunction(arg) || ts.isFunctionExpression(arg))))))
+            preferred.add(`${entry.start}:${entry.end}`);
+        }
       }
       for (const { node, symbol } of identifiers)
         // Other uses of the same import are not consumers of this scope's changed behavior.
-        if (symbols.has(symbol) && !imported.has(symbol) && !inside(node)) requests.push({ ...excerpt(node), reason: `reference to ${symbol.name}` });
+        if (symbols.has(symbol) && !imported.has(symbol) && !inside(node)) {
+          const entry = excerpt(node);
+          requests.push({ ...entry, reason: `reference to ${symbol.name}` });
+          if (symbol.declarations?.some(inside)) preferred.add(`${entry.start}:${entry.end}`);
+        }
       const supporting: typeof requests = [];
       const omitted: Array<{ start: number; end: number; startLine: number; endLine: number; reason: string }> = [];
       const enclosing = [...new Map(group.flatMap((unit) => unit.enclosing ? [[unit.enclosing.start, {
@@ -165,9 +197,22 @@ export function planDetectorScopes(
         relatedChangedLines: [...new Set(group.flatMap((unit) => unit.touched))].sort((a, b) => a - b),
         primary, enclosing, supporting,
       };
-      // Prefer smaller complete statements; never truncate a condition or silently overflow the budget.
-      for (const request of requests.sort((a, b) => a.text.length - b.text.length || a.start - b.start)) {
+      // Consumers and complete handlers precede incidental reads; trimming retains this priority.
+      const priority = (entry: Range) => {
+        const fragment = ts.createSourceFile(change.file, entry.text, ts.ScriptTarget.Latest, true);
+        let related = false;
+        walkAst(fragment, (node) => {
+          if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isFunctionLike(node)) related = true;
+        });
+        return related && preferred.has(`${entry.start}:${entry.end}`) ? 0 : related ? 1 : 2;
+      };
+      const priorities = new Map(requests.map((entry) => [entry, priority(entry)]));
+      for (const request of requests.sort((a, b) => priorities.get(a)! - priorities.get(b)! || a.text.length - b.text.length || a.start - b.start)) {
         if ([...primary, ...supporting].some((entry) => entry.start <= request.start && entry.end >= request.end)) continue;
+        if (size(request) > primaryLimit && primary.some((entry) => request.start <= entry.start && request.end >= entry.end)) {
+          omitted.push({ start: request.start, end: request.end, startLine: request.startLine, endLine: request.endLine, reason: request.reason });
+          continue;
+        }
         if (omitted.some((entry) => entry.start === request.start && entry.end === request.end)) continue;
         const next = supporting.filter((entry) => !(request.start <= entry.start && request.end >= entry.end));
         next.push(request);
