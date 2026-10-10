@@ -4,6 +4,8 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseAgentSpec } from "./agent-spec.js";
+import type { AgentName } from "./agent-spec.js";
 import { claudeProvider } from "./review/claude.js";
 import { codexProvider } from "./review/codex.js";
 import { withReviewContext } from "./review/git.js";
@@ -12,8 +14,7 @@ import { prepareDetection, review } from "./review/run.js";
 const WORKSPACE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 // evals/ cases are committed and inline; corpus/cases/ point at local clones and stay git-ignored.
 const CASE_ROOTS = [join(WORKSPACE_ROOT, "evals"), join(WORKSPACE_ROOT, "corpus", "cases")];
-// "codex+claude" detects with Codex and counter-reviews with Claude.
-const agents = { codex: codexProvider, claude: claudeProvider, "codex+claude": codexProvider };
+const agents: Record<AgentName, typeof codexProvider> = { codex: codexProvider, claude: claudeProvider };
 
 /** A case either has base/ and head/ trees beside it, or names a local repository and two revisions. */
 type Label = {
@@ -28,23 +29,24 @@ type Label = {
 );
 
 function parse(args: string[]) {
-  const options = { agents: [] as Array<keyof typeof agents>, split: "dev", only: "", scoped: false, dryRun: false, maxParts: 4 };
+  const options = { agents: [] as string[], split: "dev", only: "", scoped: false, dryRun: false, detectorOnly: false, maxParts: 4 };
   for (let index = 0; index < args.length; index += 1) {
     const [option, value] = [args[index], args[index + 1] ?? ""];
-    if (option === "--scoped" || option === "--dry-run") {
-      options[option === "--scoped" ? "scoped" : "dryRun"] = true;
+    const flags = { "--scoped": "scoped", "--dry-run": "dryRun", "--detector-only": "detectorOnly" } as const;
+    if (option in flags) {
+      options[flags[option as keyof typeof flags]] = true;
       continue;
     }
     index += 1;
     if (option === "--max-parts" && /^\d+$/.test(value) && Number(value) > 0) options.maxParts = Number(value);
-    else if (option === "--agent" && value in agents)
-      options.agents.push(value as keyof typeof agents);
+    else if (option === "--agent" && parseAgentSpec(value))
+      options.agents.push(value);
     else if (option === "--split" && ["dev", "holdout", "all"].includes(value))
       options.split = value;
     else if (option === "--case" && value) options.only = value;
     else if (option !== "--")
       throw new Error(
-        "Usage: eval [--agent codex|claude|codex+claude]... [--split dev|holdout|all] [--case name] [--scoped] [--dry-run] [--max-parts N]\nRuns the labeled cases in evals/ with each agent (default: both, dev split).",
+        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--dry-run] [--max-parts N]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge; without it the first detector judges. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips the judge and counts reference comments against every candidate.",
       );
     else index -= 1;
   }
@@ -103,28 +105,34 @@ async function main() {
           { repository, base: revisions.base, head: revisions.head },
           async (context, _checkout, sources) => {
             const plan = prepareDetection(context, options.scoped ? sources : undefined, options.maxParts);
-            return { case: name, mode: plan.mode, scopeCount: plan.scopeCount, detectorPasses: plan.batches.length, validatorPasses: "0 or 1", payloadCharacters: plan.batches.map((batch) => JSON.stringify(batch).length), omittedContext: plan.context.omitted };
+            return { case: name, mode: plan.mode, scopeCount: plan.scopeCount, batches: plan.batches.length, payloadCharacters: plan.batches.map((batch) => JSON.stringify(batch).length), omittedContext: plan.context.omitted };
           },
         );
-        process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+        for (const agent of options.agents) {
+          const spec = parseAgentSpec(agent)!;
+          const passes = { agent, detectorPasses: summary.batches * spec.detectors.length, validatorPasses: options.detectorOnly ? 0 : "0 or 1" };
+          process.stdout.write(`${JSON.stringify({ ...passes, ...summary }, null, 2)}\n`);
+        }
         continue;
       }
       for (const agent of options.agents) {
         console.error(`${name} with ${agent}...`);
         const started = Date.now();
         // Detector passes that finished before a failure; reported on error so paid work is not lost.
-        const completed: Array<{ phase: string; durationMs: number; model?: string; turns?: number; usage?: unknown; candidates: unknown[] }> = [];
+        const completed: Array<{ phase: string; agent?: string; durationMs: number; model?: string; turns?: number; usage?: unknown; candidates: unknown[] }> = [];
+        const spec = parseAgentSpec(agent)!;
         try {
           const report = await withReviewContext(
             { repository, base: revisions.base, head: revisions.head },
             (context, checkout, sources) =>
-              review(context, agents[agent]({ checkout }), {
+              review(context, spec.detectors.map((detector) => agents[detector]({ checkout })), {
                 checkout,
                 scopedSources: options.scoped ? sources : undefined,
                 maxParts: options.maxParts,
-                validator: agent === "codex+claude" ? claudeProvider({ checkout }) : undefined,
-                onPass: ({ phase, durationMs, model, turns, usage, candidates }) =>
-                  completed.push({ phase, durationMs, model, turns, usage, candidates }),
+                validator: agents[spec.judge]({ checkout }),
+                judge: !options.detectorOnly,
+                onPass: ({ phase, agent, durationMs, model, turns, usage, candidates }) =>
+                  completed.push({ phase, agent, durationMs, model, turns, usage, candidates }),
               }),
           );
           const matches = (finding: { file: string; line: number }) =>
@@ -136,10 +144,13 @@ async function main() {
                 finding.line <= location.lines[1],
             );
           const hit = report.findings.some(matches);
-          // A reference comment counts as found when an accepted finding lands within 15 lines of it.
+          const proposed = report.records.some((record) => matches(record.finding));
+          // A reference comment counts as found when an accepted finding lands within 15 lines of it,
+          // or in detector-only mode any candidate, including ones the citation check rejected.
+          const pool = options.detectorOnly ? report.records.map((record) => record.finding) : report.findings;
           const overlap = label.reference?.comments.map((comment) => ({
             ...comment,
-            found: report.findings.some(
+            found: pool.some(
               (finding) => finding.file === comment.file && Math.abs(finding.line - comment.line) <= 15,
             ),
           }));
@@ -159,9 +170,17 @@ async function main() {
               total: overlap.length,
               comments: overlap,
             },
-            passes: report.passes.map(({ phase, durationMs, model, turns, toolCalls, usage }) => ({ phase, durationMs, model, turns, toolCalls, usage })),
-            outcome:
-              label.kind === "regression"
+            detectorOnly: options.detectorOnly,
+            passes: report.passes.map(({ phase, agent, durationMs, model, turns, toolCalls, usage }) => ({ phase, agent, durationMs, model, turns, toolCalls, usage })),
+            outcome: options.detectorOnly
+              ? label.kind === "regression"
+                ? proposed
+                  ? "proposed"
+                  : "missed"
+                : report.records.length
+                  ? "proposed"
+                  : "clean"
+              : label.kind === "regression"
                 ? hit
                   ? "found"
                   : withheld
@@ -170,6 +189,7 @@ async function main() {
                 : report.findings.length
                   ? "false alarm?"
                   : "clean",
+            candidates: report.records.length,
             extraFindings: report.findings.filter((finding) => !matches(finding)).length,
             findings: report.findings,
             status: report.status,
@@ -178,13 +198,16 @@ async function main() {
             coverage: report.coverage,
             withheld: report.records
               .filter((record) => record.verdict !== "accept")
-              .map(({ finding, verdict, reason }) => ({
+              .map(({ agent, finding, verdict, reason }) => ({
+                agent,
                 file: finding.file,
                 line: finding.line,
                 title: finding.title,
                 verdict,
                 reason,
               })),
+            // Every candidate with the detector that proposed it, accepted or not.
+            proposed: report.records.map(({ agent, finding, verdict }) => ({ agent, file: finding.file, line: finding.line, title: finding.title, verdict })),
             durationMs: Date.now() - started,
             costUsd: report.passes.reduce<number | undefined>(
               (sum, pass) =>
@@ -215,12 +238,12 @@ async function main() {
   await writeFile(destination, `${JSON.stringify(results, null, 2)}\n`, "utf8");
   const rows = results.map(
     (result) =>
-      `| ${result.case} | ${result.split} | ${result.expected} | ${result.agent} | ${result.outcome} | ${"extraFindings" in result ? result.extraFindings : "-"} | ${(result.durationMs / 1000).toFixed(0)}s | ${"costUsd" in result && result.costUsd !== undefined ? `$${result.costUsd.toFixed(2)}` : "-"} | ${"reference" in result && result.reference ? `${result.reference.found}/${result.reference.total} of ${result.reference.reviewer}` : "-"} |`,
+      `| ${result.case} | ${result.split} | ${result.expected} | ${result.agent} | ${result.outcome} | ${"candidates" in result ? result.candidates : "-"} | ${"extraFindings" in result ? result.extraFindings : "-"} | ${(result.durationMs / 1000).toFixed(0)}s | ${"costUsd" in result && result.costUsd !== undefined ? `$${result.costUsd.toFixed(2)}` : "-"} | ${"reference" in result && result.reference ? `${result.reference.found}/${result.reference.total} of ${result.reference.reviewer}` : "-"} |`,
   );
   process.stdout.write(
     [
-      "| Case | Split | Expected | Agent | Outcome | Extra findings | Time | Cost | Reference |",
-      "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      "| Case | Split | Expected | Agent | Outcome | Candidates | Extra findings | Time | Cost | Reference |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
       ...rows,
       "",
       `Outcomes are location matches for a human to confirm. Full findings: ${destination}`,
