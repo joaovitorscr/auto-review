@@ -47,11 +47,27 @@ const auditSchema = {
   },
 };
 
+// The survey comes first so the detector enumerates changed behaviours before it decides which to propose.
+const surveySchema = {
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    required: ["file", "line", "behaviour", "risk"],
+    properties: {
+      file: { type: "string" },
+      line: { type: "integer", minimum: 1 },
+      behaviour: { type: "string" },
+      risk: { type: "string" },
+    },
+  },
+};
 export const findingsSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["findings"],
+  required: ["survey", "findings"],
   properties: {
+    survey: surveySchema,
     findings: {
       type: "array",
       items: {
@@ -169,6 +185,16 @@ export function validateAuditReferences(
     throw new Error("Audit references nonexistent evidence");
 }
 
+/** The detector's enumeration of changed behaviours; kept for evals, tolerant of agents that omit it. */
+export function parseSurvey(value: unknown) {
+  const survey = object(value).survey;
+  if (survey === undefined) return [];
+  return array(survey).map((item) => {
+    const entry = object(item);
+    return { file: string(entry.file), line: integer(entry.line), behaviour: string(entry.behaviour), risk: string(entry.risk) };
+  });
+}
+
 export function parseFindings(value: unknown) {
   return array(object(value).findings).map((item) => {
     const finding = object(item);
@@ -237,8 +263,6 @@ export function unsupportedReason(
     )
   )
     return "Finding is not anchored to a changed head line or a deletion anchor.";
-  // Low enough that the counter-review, not the detector's self-rating, decides borderline candidates.
-  if (finding.confidence < 0.5) return "Confidence is below 0.5.";
   if (!finding.evidence.length) return "Finding has no source evidence.";
   for (const citation of finding.evidence) {
     if (

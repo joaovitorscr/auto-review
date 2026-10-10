@@ -159,7 +159,7 @@ describe("counter-review", () => {
     expect(report.contextHash).toMatch(/^[a-f0-9]{64}$/);
     expect(renderReview(report)).toContain("amount.ts:2");
   });
-  it("rejects invented citations, unchanged anchors, duplicates and low confidence before validation", async () => {
+  it("rejects invented citations, unchanged anchors and duplicates before validation, but not low confidence", async () => {
     const { model, prompts } = provider([
       {
         findings: [
@@ -177,12 +177,15 @@ describe("counter-review", () => {
       {
         decisions: [
           { candidateId: 1, verdict: "accept", audit, reason: "Evidence supports the regression." },
+          { candidateId: 4, verdict: "reject", audit, reason: "The guard defeats the scenario." },
         ],
       },
     ]);
     const report = await review(context, model);
     expect(report.findings).toHaveLength(1);
     expect(report.records.filter((record) => record.verdict === "reject")).toHaveLength(4);
+    // The judge, not the detector's self-rating, decides low-confidence candidates.
+    expect(report.records.find((record) => record.candidateId === 4)?.reason).toBe("The guard defeats the scenario.");
     expect(prompts).toHaveLength(2);
   });
   it("runs the counter-review with a separate validator provider when given one", async () => {
@@ -194,6 +197,53 @@ describe("counter-review", () => {
     expect(report.findings).toHaveLength(1);
     expect(detector.prompts).toHaveLength(1);
     expect(validator.prompts[0]).toContain("Try to disprove");
+  });
+  it("keeps the detector's survey on its pass and tolerates its absence", async () => {
+    const survey = [{ file: "src/a.ts", line: 3, behaviour: "Parses the amount", risk: "none" }];
+    const { model } = provider([{ survey, findings: [] }]);
+    const report = await review(context, model);
+    expect(report.passes[0]?.survey).toEqual(survey);
+    const bare = provider([{ findings: [] }]);
+    expect((await review(context, bare.model)).passes[0]?.survey).toEqual([]);
+  });
+  it("records eligible candidates as unjudged when the counter-review is skipped", async () => {
+    const { model, prompts } = provider([{ findings: [finding, { ...finding, line: 1 }] }]);
+    const report = await review(context, model, { judge: false });
+    expect(prompts).toHaveLength(1);
+    expect(report.findings).toEqual([]);
+    expect(report.records.map(({ verdict, reason }) => [verdict, reason])).toEqual([
+      ["needs_more_context", "Counter-review skipped."],
+      ["reject", expect.any(String)],
+    ]);
+  });
+  it("runs every detector on each batch and judges their candidates together", async () => {
+    const first = provider([{ findings: [finding] }]);
+    const second = provider([{ findings: [{ ...finding, title: "A second concern" }] }]);
+    const judge = provider([
+      { decisions: [1, 2].map((candidateId) => ({ candidateId, verdict: "reject", audit, reason: "Guarded." })) },
+    ]);
+    const report = await review(context, [{ ...first.model, name: "codex" }, { ...second.model, name: "claude" }], {
+      validator: { ...judge.model, name: "claude" },
+    });
+    expect([first.prompts.length, second.prompts.length]).toEqual([1, 1]);
+    expect(judge.prompts[0]).toContain("A second concern");
+    expect(report.records).toHaveLength(2);
+    expect(report.passes.map(({ phase, agent }) => [phase, agent])).toEqual([
+      ["detector", "codex"],
+      ["detector", "claude"],
+      ["validator", "claude"],
+    ]);
+  });
+  it("collapses accepted findings within three lines of each other into the strongest one", async () => {
+    const twoLines = { ...context, changes: [{ ...context.changes[0]!, reviewLines: [2, 3] }] };
+    const weaker = { ...finding, title: "Same bug, other line", line: 3, severity: "medium" };
+    const { model } = provider([
+      { findings: [weaker, finding] },
+      { decisions: [1, 2].map((candidateId) => ({ candidateId, verdict: "accept", audit, reason: "Reachable." })) },
+    ]);
+    const report = await review(twoLines, model);
+    expect(report.findings).toEqual([finding]);
+    expect(report.records[0]).toMatchObject({ verdict: "reject", reason: "Duplicate of an accepted finding." });
   });
   it("accepts head evidence the agent read from the checkout and rejects ranges that do not exist", async () => {
     const checkout = await mkdtemp(join(tmpdir(), "auto-review-retrieved-"));
