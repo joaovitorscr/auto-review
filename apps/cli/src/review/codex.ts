@@ -45,6 +45,7 @@ export function codexProvider(options: {
   const executable = options.executable ?? "codex";
   let overrides: Promise<string[]> | undefined;
   return {
+    name: "codex",
     async complete(request) {
       overrides ??= disableMcpServers(executable);
       const mcp = await overrides;
