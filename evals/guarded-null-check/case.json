@@ -1,0 +1,5 @@
+{
+  "split": "holdout",
+  "kind": "none",
+  "note": "formatUser drops its null check, but its only caller filters out null users first, so no reachable crash."
+}
