@@ -112,6 +112,8 @@ async function main() {
       for (const agent of options.agents) {
         console.error(`${name} with ${agent}...`);
         const started = Date.now();
+        // Detector passes that finished before a failure; reported on error so paid work is not lost.
+        const completed: Array<{ phase: string; durationMs: number; model?: string; turns?: number; usage?: unknown; candidates: unknown[] }> = [];
         try {
           const report = await withReviewContext(
             { repository, base: revisions.base, head: revisions.head },
@@ -121,6 +123,8 @@ async function main() {
                 scopedSources: options.scoped ? sources : undefined,
                 maxParts: options.maxParts,
                 validator: agent === "codex+claude" ? claudeProvider({ checkout }) : undefined,
+                onPass: ({ phase, durationMs, model, turns, usage, candidates }) =>
+                  completed.push({ phase, durationMs, model, turns, usage, candidates }),
               }),
           );
           const matches = (finding: { file: string; line: number }) =>
@@ -196,6 +200,7 @@ async function main() {
             agent,
             outcome: "error",
             error: error instanceof Error ? error.message : String(error),
+            passes: completed,
             durationMs: Date.now() - started,
           });
         }
