@@ -80,6 +80,8 @@ export async function review(
     // Runs the counter-review with a different provider than the detector.
     validator?: ModelProvider;
     scopedSources?: ScopeSources;
+    // Called after each completed pass, so a later failure does not lose paid work.
+    onPass?: (pass: { phase: string; candidates: Finding[] } & Omit<ModelResponse, "output">) => void;
   } = {},
 ) {
   const plan = prepareDetection(context, options.scopedSources, options.maxParts);
@@ -142,7 +144,9 @@ export async function review(
     });
     const { output, ...detectorPass } = detection;
     passes.push({ phase: "detector", ...detectorPass });
-    detected.push(...parseFindings(output));
+    const candidates = parseFindings(output) as Finding[];
+    options.onPass?.({ phase: "detector", ...detectorPass, candidates });
+    detected.push(...candidates);
   }
   const candidates = (detected as Finding[]).map((finding, index) => ({
     candidateId: index + 1,
