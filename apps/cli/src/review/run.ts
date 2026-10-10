@@ -68,22 +68,28 @@ export function validationContext(context: ReviewContext, maxCharacters = 80_000
 
 /**
  * Runs the detector and counter-review passes.
+ * Every detector runs on every batch and their candidates are judged together; the first detector
+ * also judges unless `validator` is given. `judge: false` stops after detection and records every
+ * eligible candidate as needs_more_context, so evals can measure what the detectors proposed.
  * With `checkout`, head citations outside the supplied snippets are checked against that directory.
  */
 export async function review(
   context: ReviewContext,
-  provider: ModelProvider,
+  detectors: ModelProvider | ModelProvider[],
   options: {
     onProgress?: (message: string) => void;
     checkout?: string;
     maxParts?: number;
-    // Runs the counter-review with a different provider than the detector.
+    // Runs the counter-review with a different provider than the first detector.
     validator?: ModelProvider;
+    judge?: boolean;
     scopedSources?: ScopeSources;
     // Called after each completed pass, so a later failure does not lose paid work.
-    onPass?: (pass: { phase: string; candidates: Finding[] } & Omit<ModelResponse, "output">) => void;
+    onPass?: (pass: { phase: string; agent?: string; candidates: Finding[] } & Omit<ModelResponse, "output">) => void;
   } = {},
 ) {
+  const providers = [detectors].flat();
+  if (!providers.length) throw new Error("review needs at least one detector.");
   const plan = prepareDetection(context, options.scopedSources, options.maxParts);
   context = plan.context;
   const onProgress = options.onProgress ?? (() => {});
@@ -97,7 +103,7 @@ export async function review(
   }> = [];
   // Head source the agent cited from its own reading, saved so evidence stays inspectable.
   const retrieved: Array<{ file: string; startLine: number; endLine: number; text: string }> = [];
-  const passes: Array<{ phase: string } & Omit<ModelResponse, "output">> = [];
+  const passes: Array<{ phase: string; agent?: string } & Omit<ModelResponse, "output">> = [];
   const coverage = {
     changedFiles: context.changes.map((change) => change.file),
     skippedFiles: context.skipped,
@@ -132,22 +138,24 @@ export async function review(
   if (!context.changes.length) return { ...metadata, findings: [] as Finding[] };
   const batches = plan.batches;
   const detected: unknown[] = [];
-  for (const [index, batch] of batches.entries()) {
-    onProgress(
-      batches.length > 1
-        ? `Looking for regressions in part ${index + 1} of ${batches.length}...`
-        : "Looking for regressions in changed code and its callers...",
-    );
-    const detection = await provider.complete({
-    schema: findingsSchema,
-    prompt: `${rules}${plan.mode === "scoped" ? "\nScoped mode: examine each scope independently before returning the combined findings. Anchor to scopes[].anchors (or relatedChangedLines for shared-line fragments). primary and supporting are head excerpts; base contains base evidence. diff rows carry original baseLine/headLine coordinates; gaps between rows or ranges are omitted code, not adjacency. Use the before/after evidence to distinguish regressions from pre-existing behavior. Omitted and unresolved entries are missing context, not evidence of absent guards. Read head consumers as needed." : ""}\n\nExamine data flow, boundaries, error handling, asynchronous state and user interactions. For every new or changed input check (request bodies, query params, CSV or file rows, form fields), find where the value ends up (database column types and constraints, parsers, external APIs) and ask whether some value passes the check but is rejected or misread there, for example a well-shaped but impossible date, an out-of-range number, or an over-long string. For changed UI code, check that state stays correct when its inputs change: state kept across a switch of route, account or selection that should reset, cache keys that no longer match what invalidation or refetch targets, refs or handlers created but never attached, and empty, loading or error branches that show the wrong message. Files in readFirst have long patches with little supplied context: read the head file around their changed lines, including where new state, errors and handlers are rendered or consumed, before concluding. Compare before and after. Propose at most 10 concrete regression candidates supported by changed code. For each, give a plausible trigger, impact, source evidence, and a suggested fix, and record any unresolved assumption as an inconclusive counter-check for the counter-reviewer. An unresolved guard or caller does not by itself disqualify a candidate. Omit claims contradicted by available evidence and generic requests for safeguards. Anchor line to ${plan.mode === "scoped" ? "a scope's anchors or relatedChangedLines" : "change.reviewLines"} on head. Entirely deleted files can support findings on other changed files but have no head anchor. Return {"findings":[]} when no candidate is found.\n\nCONTEXT\n${JSON.stringify(batch)}`,
-    });
-    const { output, ...detectorPass } = detection;
-    passes.push({ phase: "detector", ...detectorPass });
-    const candidates = parseFindings(output) as Finding[];
-    options.onPass?.({ phase: "detector", ...detectorPass, candidates });
-    detected.push(...candidates);
-  }
+  for (const [index, batch] of batches.entries())
+    for (const provider of providers) {
+      onProgress(
+        (batches.length > 1
+          ? `Looking for regressions in part ${index + 1} of ${batches.length}`
+          : "Looking for regressions in changed code and its callers") +
+          (providers.length > 1 && provider.name ? ` with ${provider.name}...` : "..."),
+      );
+      const detection = await provider.complete({
+        schema: findingsSchema,
+        prompt: `${rules}${plan.mode === "scoped" ? "\nScoped mode: examine each scope independently before returning the combined findings. Anchor to scopes[].anchors (or relatedChangedLines for shared-line fragments). primary and supporting are head excerpts; base contains base evidence. diff rows carry original baseLine/headLine coordinates; gaps between rows or ranges are omitted code, not adjacency. Use the before/after evidence to distinguish regressions from pre-existing behavior. Omitted and unresolved entries are missing context, not evidence of absent guards. Read head consumers as needed." : ""}\n\nExamine data flow, boundaries, error handling, asynchronous state and user interactions. For every new or changed input check (request bodies, query params, CSV or file rows, form fields), find where the value ends up (database column types and constraints, parsers, external APIs) and ask whether some value passes the check but is rejected or misread there, for example a well-shaped but impossible date, an out-of-range number, or an over-long string. For changed UI code, check that state stays correct when its inputs change: state kept across a switch of route, account or selection that should reset, cache keys that no longer match what invalidation or refetch targets, refs or handlers created but never attached, and empty, loading or error branches that show the wrong message. Files in readFirst have long patches with little supplied context: read the head file around their changed lines, including where new state, errors and handlers are rendered or consumed, before concluding. Compare before and after. Propose at most 10 concrete regression candidates supported by changed code. For each, give a plausible trigger, impact, source evidence, and a suggested fix, and record any unresolved assumption as an inconclusive counter-check for the counter-reviewer. An unresolved guard or caller does not by itself disqualify a candidate. Omit claims contradicted by available evidence and generic requests for safeguards. Anchor line to ${plan.mode === "scoped" ? "a scope's anchors or relatedChangedLines" : "change.reviewLines"} on head. Entirely deleted files can support findings on other changed files but have no head anchor. Return {"findings":[]} when no candidate is found.\n\nCONTEXT\n${JSON.stringify(batch)}`,
+      });
+      const { output, ...detectorPass } = detection;
+      passes.push({ phase: "detector", agent: provider.name, ...detectorPass });
+      const candidates = parseFindings(output) as Finding[];
+      options.onPass?.({ phase: "detector", agent: provider.name, ...detectorPass, candidates });
+      detected.push(...candidates);
+    }
   const candidates = (detected as Finding[]).map((finding, index) => ({
     candidateId: index + 1,
     finding,
@@ -182,19 +190,23 @@ export async function review(
     if (reason) records.push({ ...candidate, verdict: "reject", reason });
     else eligible.push(candidate);
   }
-  if (eligible.length) {
+  if (eligible.length && options.judge === false)
+    for (const candidate of eligible)
+      records.push({ ...candidate, verdict: "needs_more_context", reason: "Counter-review skipped." });
+  else if (eligible.length) {
     onProgress(`Trying to disprove ${eligible.length} candidate finding(s)...`);
     const candidateFiles = new Set(eligible.flatMap(({ finding }) => [finding.file, ...finding.evidence.map((entry) => entry.file)]));
     const relatedFiles = batches.flatMap((batch) => {
       const files = "scopes" in batch ? batch.scopes.map((scope) => scope.file) : batch.changes.map((change) => change.file);
       return files.some((file) => candidateFiles.has(file)) ? files : [];
     });
-    const validation = await (options.validator ?? provider).complete({
+    const judge = options.validator ?? providers[0]!;
+    const validation = await judge.complete({
       schema: validationSchema,
       prompt: `${rules}\n${judgeRules}\n\nYou are the independent counter-reviewer. Try to disprove every candidate. Check whether the bug already existed, whether guards or callers defeat the scenario, and whether evidence establishes each step. Accept only when the change introduces the claimed reachable regression. A request any authenticated client can send counts as reachable even when the bundled UI never sends it: new validation that lets malformed input crash with a 500 instead of a 4xx is a material bug. Reject incorrect claims. Use needs_more_context when you cannot establish or disprove the claim. Return exactly one decision per candidateId. Do not rewrite findings. Give a brief evidence-based reason, not private reasoning.\n\nCANDIDATES\n${JSON.stringify(eligible)}\n\nRETRIEVED HEAD SOURCE CITED BY CANDIDATES\n${JSON.stringify(retrieved)}\n\nDIFF OF CANDIDATE FILES\n${JSON.stringify(context.changes.filter((change) => eligible.some((candidate) => candidate.finding.file === change.file)))}\n\nINDEPENDENT CONTEXT FOR COUNTER-CHECKS\n${JSON.stringify(validationContext(context, 80_000, relatedFiles))}\n\nConsider this context even when candidates did not cite it. Base comparison leads are not proof of equivalence. Read head files when a check needs more; omitted context is not evidence of absent behavior.`,
     });
     const { output: validated, ...validatorPass } = validation;
-    passes.push({ phase: "validator", ...validatorPass });
+    passes.push({ phase: "validator", agent: judge.name, ...validatorPass });
     const decisions = parseDecisions(validated);
     if (
       decisions.length !== eligible.length ||
@@ -217,10 +229,16 @@ export async function review(
   }
   records.sort((a, b) => a.candidateId - b.candidateId);
   const rank = { critical: 0, high: 1, medium: 2 };
-  const findings = records
-    .filter((record) => record.verdict === "accept")
-    .map((record) => record.finding)
-    .sort((a, b) => rank[a.severity] - rank[b.severity] || b.confidence - a.confidence);
+  const byStrength = (a: Finding, b: Finding) => rank[a.severity] - rank[b.severity] || b.confidence - a.confidence;
+  // Detectors often report one bug at neighbouring lines; publish the strongest of each cluster.
+  const kept: Finding[] = [];
+  for (const record of records.filter((entry) => entry.verdict === "accept").sort((a, b) => byStrength(a.finding, b.finding))) {
+    if (kept.some((finding) => finding.file === record.finding.file && Math.abs(finding.line - record.finding.line) <= 3)) {
+      record.verdict = "reject";
+      record.reason = "Duplicate of an accepted finding.";
+    } else kept.push(record.finding);
+  }
+  const findings = kept;
   return { ...metadata, findings };
 }
 
