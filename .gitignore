@@ -1,6 +1,6 @@
 .env
 .env.*
-docs/
+docs/.internals/
 node_modules/
 .venv/
 dist/
