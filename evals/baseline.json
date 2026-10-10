@@ -1,0 +1,302 @@
+{
+  "note": "Latest completed eval result per case, agent and detection mode. Regenerate from outputs/eval-*.json; compare experiments against these numbers. Reference = Macroscope comments found within 15 lines by an accepted finding.",
+  "generatedAt": "2026-10-10",
+  "results": [
+    {
+      "case": "cents-conversion",
+      "split": "dev",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968734525.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 0.12,
+      "reference": null
+    },
+    {
+      "case": "cents-conversion",
+      "split": "dev",
+      "agent": "codex",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790907889942.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": null,
+      "reference": null
+    },
+    {
+      "case": "cents-refactor",
+      "split": "dev",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968734525.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": 0.04,
+      "reference": null
+    },
+    {
+      "case": "cents-refactor",
+      "split": "dev",
+      "agent": "codex",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790907889942.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": null,
+      "reference": null
+    },
+    {
+      "case": "guarded-null-check",
+      "split": "holdout",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968734525.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": 0.04,
+      "reference": null
+    },
+    {
+      "case": "guarded-null-check",
+      "split": "holdout",
+      "agent": "codex",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790907889942.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": null,
+      "reference": null
+    },
+    {
+      "case": "othos-31-full-pr",
+      "split": "holdout",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-03",
+      "source": "eval-1791070922611.json",
+      "outcome": "missed",
+      "extraFindings": 2,
+      "costUsd": 1.46,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 2,
+        "total": 6,
+        "foundLines": [
+          "apps/api/src/modules/workspaces/analytics-routes.ts:91",
+          "apps/web/src/lib/query-client.ts:23"
+        ]
+      }
+    },
+    {
+      "case": "othos-34-full-pr",
+      "split": "holdout",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-03",
+      "source": "eval-1790996407342.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 7.83,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 1,
+        "total": 3,
+        "foundLines": [
+          "apps/worker/src/schedule.ts:208"
+        ]
+      }
+    },
+    {
+      "case": "othos-35-full-pr",
+      "split": "holdout",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-04",
+      "source": "eval-1791138809676.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 1.48,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 1,
+        "total": 5,
+        "foundLines": [
+          "apps/tray/src/renderer/components/tray-panel.tsx:256"
+        ]
+      }
+    },
+    {
+      "case": "othos-35-full-pr",
+      "split": "holdout",
+      "agent": "claude (detector-only, proposing prompt)",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-10",
+      "source": "eval-1791667239287.json",
+      "outcome": "missed",
+      "candidates": 2,
+      "costUsd": 1.05,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 1,
+        "total": 5,
+        "foundLines": [
+          "apps/tray/src/main/provider-login.ts:29"
+        ]
+      },
+      "note": "3 passes, 2 candidates, both under 0.5 confidence (gate since removed). provider-login.ts:29 counted via the line 79 anchor but the candidate at 76 is a different bug (no timeout on the login child)."
+    },
+    {
+      "case": "othos-35-full-pr",
+      "split": "holdout",
+      "agent": "codex,claude+claude",
+      "detectionMode": "scoped",
+      "recordedAt": "2026-10-10",
+      "source": "eval-1791666856939.json",
+      "outcome": "found",
+      "extraFindings": 1,
+      "costUsd": 4.62,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 3,
+        "total": 5,
+        "foundLines": [
+          "apps/tray/src/main/main.ts:717",
+          "apps/tray/src/renderer/components/tray-panel.tsx:256",
+          "apps/tray/src/renderer/components/tray-panel.tsx:349"
+        ]
+      },
+      "note": "tray-panel.tsx:349 counted by location only; our finding at 354 is a different bug (empty shadowHomePath). Comment 3 found by content at provider-login.ts:79, not counted."
+    },
+    {
+      "case": "othos-35-full-pr",
+      "split": "holdout",
+      "agent": "codex+claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-04",
+      "source": "eval-1791141934935.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 0.38,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 2,
+        "total": 5,
+        "foundLines": [
+          "apps/tray/src/renderer/components/tray-panel.tsx:256",
+          "apps/tray/src/renderer/components/tray-panel.tsx:1141"
+        ]
+      }
+    },
+    {
+      "case": "othos-35-full-pr",
+      "split": "holdout",
+      "agent": "codex+claude",
+      "detectionMode": "scoped",
+      "recordedAt": "2026-10-08",
+      "source": "eval-1791486807592.json",
+      "outcome": "found",
+      "extraFindings": 1,
+      "costUsd": 0.47,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 2,
+        "total": 5,
+        "foundLines": [
+          "apps/tray/src/main/main.ts:717",
+          "apps/tray/src/renderer/components/tray-panel.tsx:256"
+        ]
+      }
+    },
+    {
+      "case": "othos-36-csv-date",
+      "split": "dev",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-03",
+      "source": "eval-1790995990216.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 0.93,
+      "reference": null
+    },
+    {
+      "case": "othos-36-full-pr",
+      "split": "holdout",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968213618.json",
+      "outcome": "missed",
+      "extraFindings": 0,
+      "costUsd": 2.93,
+      "reference": null
+    },
+    {
+      "case": "othos-36-route-date",
+      "split": "dev",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968379196.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 2.44,
+      "reference": null
+    },
+    {
+      "case": "pagination-offset",
+      "split": "dev",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968247903.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 0.15,
+      "reference": null
+    },
+    {
+      "case": "preexisting-missing-await",
+      "split": "dev",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968252829.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": 0.04,
+      "reference": null
+    },
+    {
+      "case": "removed-await",
+      "split": "holdout",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968273847.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 0.13,
+      "reference": null
+    },
+    {
+      "case": "safe-rename",
+      "split": "holdout",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968287997.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": 0.04,
+      "reference": null
+    }
+  ]
+}
