@@ -44,7 +44,7 @@ Return JSON matching the supplied schema, without markdown or extra text.`;
 const judgeRules = `Accept only actionable bugs with a reachable scenario and material impact.
 The AST graph is incomplete. Unresolved calls and missing context do not prove a bug; look for the missing context before abstaining. If evidence is still insufficient, abstain.
 Missing safeguards in supplied snippets do not prove their absence elsewhere.
-For error/remedy or account mismatch claims, trace the identity and configuration used by the failing operation and by the proposed remedy. A selected account label alone does not establish which credentials produced an error. Address counterevidence explicitly, and use needs_more_context when provenance remains unresolved.`;
+When the change adds a user action that acts on a selected account, provider or configuration, judge the action against that selection, not against the component that produced the error. A pre-existing probe that ignores the selection does not excuse a new remedy that ignores it too: if a user with several configured accounts can trigger the action on one and have it affect another, that is a reachable regression introduced by the change.`;
 
 /** Preserve independent context for counter-checks, with explicit omissions at the budget. */
 export function validationContext(context: ReviewContext, maxCharacters = 80_000, preferredFiles: string[] = []) {

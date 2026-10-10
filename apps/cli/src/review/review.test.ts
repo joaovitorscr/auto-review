@@ -110,7 +110,7 @@ describe("counter-review", () => {
     ]);
     await review(input, model);
     expect(prompts[1]).toContain(independent.text);
-    expect(prompts[1]).toContain("trace the identity and configuration");
+    expect(prompts[1]).toContain("judge the action against that selection");
     const budget = JSON.stringify(independent).length + 1;
     expect(validationContext(input, budget, ["probe.ts"]).snippets).toEqual([independent]);
     expect(validationContext(input, 1)).toEqual({ snippets: [], omitted: [
