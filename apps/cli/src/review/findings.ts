@@ -237,8 +237,6 @@ export function unsupportedReason(
     )
   )
     return "Finding is not anchored to a changed head line or a deletion anchor.";
-  // Low enough that the counter-review, not the detector's self-rating, decides borderline candidates.
-  if (finding.confidence < 0.5) return "Confidence is below 0.5.";
   if (!finding.evidence.length) return "Finding has no source evidence.";
   for (const citation of finding.evidence) {
     if (
