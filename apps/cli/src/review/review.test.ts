@@ -159,7 +159,7 @@ describe("counter-review", () => {
     expect(report.contextHash).toMatch(/^[a-f0-9]{64}$/);
     expect(renderReview(report)).toContain("amount.ts:2");
   });
-  it("rejects invented citations, unchanged anchors, duplicates and low confidence before validation", async () => {
+  it("rejects invented citations, unchanged anchors and duplicates before validation, but not low confidence", async () => {
     const { model, prompts } = provider([
       {
         findings: [
@@ -177,12 +177,15 @@ describe("counter-review", () => {
       {
         decisions: [
           { candidateId: 1, verdict: "accept", audit, reason: "Evidence supports the regression." },
+          { candidateId: 4, verdict: "reject", audit, reason: "The guard defeats the scenario." },
         ],
       },
     ]);
     const report = await review(context, model);
     expect(report.findings).toHaveLength(1);
     expect(report.records.filter((record) => record.verdict === "reject")).toHaveLength(4);
+    // The judge, not the detector's self-rating, decides low-confidence candidates.
+    expect(report.records.find((record) => record.candidateId === 4)?.reason).toBe("The guard defeats the scenario.");
     expect(prompts).toHaveLength(2);
   });
   it("runs the counter-review with a separate validator provider when given one", async () => {
