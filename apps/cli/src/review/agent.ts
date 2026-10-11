@@ -11,7 +11,8 @@ export type ModelResponse = {
   toolCalls?: Array<{ name: string; input: unknown }>;
   usage?: { inputTokens?: number; outputTokens?: number; costUsd?: number };
 };
-export type ModelProvider = { complete(request: ModelRequest): Promise<ModelResponse> };
+/** `name` labels the passes this provider ran in reports and evals. */
+export type ModelProvider = { name?: string; complete(request: ModelRequest): Promise<ModelResponse> };
 
 /**
  * Runs an agent CLI with the prompt on stdin and resolves with its stdout.

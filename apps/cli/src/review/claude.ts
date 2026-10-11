@@ -14,6 +14,7 @@ export function claudeProvider(options: {
   signal?: AbortSignal;
 }): ModelProvider {
   return {
+    name: "claude",
     async complete(request) {
       const started = Date.now();
       const args = [
