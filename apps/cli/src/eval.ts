@@ -22,7 +22,9 @@ type Label = {
   note: string;
   source?: { repository: string; base: string; head: string };
   // Another reviewer's comments on the same revisions, used to measure overlap with it.
-  reference?: { reviewer: string; comments: Array<{ file: string; line: number; severity: string; title: string }> };
+  // A comment may list extra anchors: other places the same bug can be reported (e.g. the implementation
+  // when the reviewer commented at the call site). A finding within 15 lines of any anchor counts.
+  reference?: { reviewer: string; comments: Array<{ file: string; line: number; severity: string; title: string; anchors?: Array<{ file: string; line: number }> }> };
 } & (
   | { kind: "regression"; locations: Array<{ file: string; lines: [number, number] }> }
   | { kind: "none" }
@@ -150,8 +152,8 @@ async function main() {
           const pool = options.detectorOnly ? report.records.map((record) => record.finding) : report.findings;
           const overlap = label.reference?.comments.map((comment) => ({
             ...comment,
-            found: report.findings.some(
-              (finding) => finding.file === comment.file && Math.abs(finding.line - comment.line) <= 15,
+            found: [comment, ...(comment.anchors ?? [])].some((anchor) =>
+              pool.some((finding) => finding.file === anchor.file && Math.abs(finding.line - anchor.line) <= 15),
             ),
           }));
           // The detector saw the bug, but the citation check or counter-review withheld it.
