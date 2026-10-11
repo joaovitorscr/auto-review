@@ -1,0 +1,126 @@
+{
+  "note": "Latest completed eval result per case, agent and detection mode. Regenerate from outputs/eval-*.json; compare experiments against these numbers. Reference = Macroscope comments found within 15 lines by an accepted finding.",
+  "generatedAt": "2026-10-10",
+  "results": [
+    {
+      "case": "cents-conversion",
+      "split": "dev",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968734525.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 0.12,
+      "reference": null
+    },
+    {
+      "case": "cents-conversion",
+      "split": "dev",
+      "agent": "codex",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790907889942.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": null,
+      "reference": null
+    },
+    {
+      "case": "cents-refactor",
+      "split": "dev",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968734525.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": 0.04,
+      "reference": null
+    },
+    {
+      "case": "cents-refactor",
+      "split": "dev",
+      "agent": "codex",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790907889942.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": null,
+      "reference": null
+    },
+    {
+      "case": "guarded-null-check",
+      "split": "holdout",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968734525.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": 0.04,
+      "reference": null
+    },
+    {
+      "case": "guarded-null-check",
+      "split": "holdout",
+      "agent": "codex",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790907889942.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": null,
+      "reference": null
+    },
+    {
+      "case": "pagination-offset",
+      "split": "dev",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968247903.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 0.15,
+      "reference": null
+    },
+    {
+      "case": "preexisting-missing-await",
+      "split": "dev",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968252829.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": 0.04,
+      "reference": null
+    },
+    {
+      "case": "removed-await",
+      "split": "holdout",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968273847.json",
+      "outcome": "found",
+      "extraFindings": 0,
+      "costUsd": 0.13,
+      "reference": null
+    },
+    {
+      "case": "safe-rename",
+      "split": "holdout",
+      "agent": "claude",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-02",
+      "source": "eval-1790968287997.json",
+      "outcome": "clean",
+      "extraFindings": 0,
+      "costUsd": 0.04,
+      "reference": null
+    }
+  ]
+}
