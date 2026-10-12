@@ -87,7 +87,7 @@ export function packContext(
     ignored: string[];
     configErrors: Array<{ config: string; message: string }>;
   },
-  maxCharacters = 400_000,
+  maxCharacters = 800_000,
 ) {
   const { index, before, after, ...metadata } = input;
   const snippets: Snippet[] = [];
@@ -146,26 +146,21 @@ export function packContext(
         change.reviewLines.some((line) => line >= symbol.startLine && line <= symbol.endLine),
     ),
   );
-  for (const change of input.changes) {
-    for (const hunk of change.hunks) {
-      add(
-        change.file,
-        "base",
-        hunk.oldStart - 15,
-        hunk.oldStart + hunk.oldLines + 15,
-        "before change",
-      );
-      add(
-        change.file,
-        "head",
-        hunk.newStart - 15,
-        hunk.newStart + hunk.newLines + 15,
-        "after change",
-      );
+  for (const change of input.changes)
+    for (const hunk of change.hunks)
+      add(change.file, "head", hunk.newStart - 15, hunk.newStart + hunk.newLines + 15, "after change");
+  // A changed symbol is usually a function; a 2,000-line route registrar or page component is
+  // one symbol too, and as a single snippet it never fits a batch. Long symbols contribute
+  // windows around their changed lines instead.
+  const longSymbol = 200;
+  for (const symbol of changedSymbols) {
+    if (symbol.endLine - symbol.startLine < longSymbol) {
+      add(symbol.file, "head", symbol.startLine, symbol.endLine, `changed ${symbol.name}`);
+      continue;
     }
+    const lines = input.changes.find((change) => change.file === symbol.file)!.reviewLines.filter((line) => line >= symbol.startLine && line <= symbol.endLine);
+    for (const line of lines) add(symbol.file, "head", line - 40, line + 40, `changed ${symbol.name} (window)`);
   }
-  for (const symbol of changedSymbols)
-    add(symbol.file, "head", symbol.startLine, symbol.endLine, `changed ${symbol.name}`);
   const ids = new Set(changedSymbols.map((symbol) => symbol.id));
   const byId = new Map(index.symbols.map((symbol) => [symbol.id, symbol]));
   for (const call of index.calls) {
@@ -180,6 +175,10 @@ export function packContext(
     }
     add(call.file, "head", call.startLine - 8, call.endLine + 8, "call site");
   }
+  // The base version matters less than what the head code calls, so it comes after the one-hop context.
+  for (const change of input.changes)
+    for (const hunk of change.hunks)
+      add(change.file, "base", hunk.oldStart - 15, hunk.oldStart + hunk.oldLines + 15, "before change");
   const changedFiles = new Set(input.changes.map((change) => change.file));
   for (const entry of index.imports) {
     if (entry.target && changedFiles.has(entry.target))
@@ -209,7 +208,7 @@ function isData(text: string) {
  * Splits a context into detector-sized pieces: changed files are grouped greedily, each group
  * gets its own hunk snippets first, then the remaining snippets in packing order until full.
  */
-export function batchContext(context: ReviewContext, maxCharacters = 80_000) {
+export function batchContext(context: ReviewContext, maxCharacters = 240_000) {
   const size = (value: unknown) => JSON.stringify(value).length;
   // Coverage lists stay in the report; the detector only needs code and instructions.
   const shared = { base: context.base, head: context.head, instructions: context.instructions, skipped: context.skipped };
@@ -235,8 +234,15 @@ export function batchContext(context: ReviewContext, maxCharacters = 80_000) {
     const rest = context.snippets.filter((snippet) => !files.has(snippet.file));
     let remaining = maxCharacters - fixed - size(changes);
     const snippets: typeof context.snippets = [];
-    // String tables and similar data say little about behavior, so they only fill leftover space.
-    const ordered = [...own, ...rest].sort((a, b) => Number(isData(a.text)) - Number(isData(b.text)));
+    // Most useful first: head code of the changed files, then what the change calls and who calls
+    // it, then the base version, then whole-file import chunks. Data tables fill leftover space.
+    const priority = (snippet: Snippet) =>
+      snippet.reason.startsWith("after") || snippet.reason.startsWith("changed") ? 0
+      : snippet.reason.startsWith("callee") || snippet.reason.startsWith("caller") ? 1
+      : snippet.reason.startsWith("call site") ? 2
+      : snippet.reason.startsWith("before") ? 3
+      : 4;
+    const ordered = [...own, ...rest].sort((a, b) => Number(isData(a.text)) - Number(isData(b.text)) || Number(files.has(b.file)) - Number(files.has(a.file)) || priority(a) - priority(b) || a.text.length - b.text.length);
     for (const snippet of ordered) {
       const cost = size(snippet);
       if (cost > remaining) continue;
