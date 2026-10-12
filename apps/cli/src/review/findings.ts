@@ -62,6 +62,14 @@ const surveySchema = {
     },
   },
 };
+/** Ordered strongest first; the published review posts critical and high, caps medium and only notes low. */
+export const severities = ["critical", "high", "medium", "low"] as const;
+export type Severity = (typeof severities)[number];
+function severity(value: unknown): Severity {
+  if (!severities.includes(value as Severity)) throw new Error("Invalid severity from the agent");
+  return value as Severity;
+}
+
 export const findingsSchema = {
   type: "object",
   additionalProperties: false,
@@ -87,7 +95,7 @@ export const findingsSchema = {
         ],
         properties: {
           title: { type: "string" },
-          severity: { type: "string", enum: ["critical", "high", "medium"] },
+          severity: { type: "string", enum: severities },
           confidence: { type: "number" },
           file: { type: "string" },
           line: { type: "integer", minimum: 1 },
@@ -111,10 +119,12 @@ export const validationSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["candidateId", "verdict", "reason", "audit"],
+        required: ["candidateId", "verdict", "severity", "reason", "audit"],
         properties: {
           candidateId: { type: "integer", minimum: 1 },
           verdict: { type: "string", enum: ["accept", "reject", "needs_more_context"] },
+          // The judge's final level for an accepted candidate; the detector's level is a proposal.
+          severity: { type: "string", enum: severities },
           reason: { type: "string" },
           audit: auditSchema,
         },
@@ -200,9 +210,6 @@ export function parseSurvey(value: unknown) {
 export function parseFindings(value: unknown) {
   return array(object(value).findings).map((item) => {
     const finding = object(item);
-    const severity = finding.severity;
-    if (severity !== "critical" && severity !== "high" && severity !== "medium")
-      throw new Error("Invalid severity from the agent");
     if (
       typeof finding.confidence !== "number" ||
       !Number.isFinite(finding.confidence) ||
@@ -225,7 +232,7 @@ export function parseFindings(value: unknown) {
     return {
       audit,
       title: string(finding.title),
-      severity,
+      severity: severity(finding.severity),
       confidence: finding.confidence,
       file: string(finding.file),
       line: integer(finding.line),
@@ -247,6 +254,7 @@ export function parseDecisions(value: unknown) {
     return {
       candidateId: integer(decision.candidateId),
       verdict,
+      severity: decision.severity === undefined ? undefined : severity(decision.severity),
       reason: string(decision.reason),
       audit: parseAudit(decision.audit, { requireChecks: false }),
     } as const;

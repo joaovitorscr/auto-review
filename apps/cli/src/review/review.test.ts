@@ -185,7 +185,7 @@ describe("counter-review", () => {
     expect(report.findings).toEqual([finding]);
     expect(report.records[0]?.validatorAudit).toEqual(audit);
     expect(report.records[1]?.validatorAudit).toEqual(audit);
-    expect(report.policyVersion).toBe(2);
+    expect(report.policyVersion).toBe(3);
     expect(report.records.map((record) => record.verdict)).toEqual([
       "accept",
       "reject",
@@ -194,6 +194,22 @@ describe("counter-review", () => {
     expect(prompts[1]).toContain("Try to disprove");
     expect(report.contextHash).toMatch(/^[a-f0-9]{64}$/);
     expect(renderReview(report)).toContain("amount.ts:2");
+  });
+  it("posts every high, caps mediums, notes lows, and lets the judge set the level", async () => {
+    const mediums = Array.from({ length: 7 }, (_, i) => ({ ...finding, title: `Medium ${i + 1}`, severity: "medium", confidence: 0.9 - i / 100 }));
+    const low = { ...finding, title: "Hardening", severity: "medium" };
+    const level = (index: number) => (index === 0 ? "critical" : index === 8 ? "low" : "medium");
+    const { model } = provider([
+      { findings: [finding, ...mediums, low] },
+      { decisions: Array.from({ length: 9 }, (_, i) => ({ candidateId: i + 1, verdict: "accept", severity: level(i), reason: "Reachable.", audit })) },
+    ]);
+    const report = await review(context, model);
+    expect(report.findings.map((entry) => entry.severity)).toEqual(["critical", ...Array.from({ length: 6 }, () => "medium")]);
+    expect(report.deferred.map((entry) => entry.title)).toEqual(["Medium 7", "Hardening"]);
+    expect(report.records[8]?.finding.severity).toBe("low");
+    const rendered = renderReview(report);
+    expect(rendered).toContain("## critical: Convert cents");
+    expect(rendered).toContain("Also noted, not posted:\n\n- medium: Medium 7 (`amount.ts:2`)\n- low: Hardening (`amount.ts:2`)");
   });
   it("rejects invented citations, unchanged anchors and duplicates before validation, but not low confidence", async () => {
     const { model, prompts } = provider([
