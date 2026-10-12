@@ -52,7 +52,7 @@ function parse(args: string[]) {
     else if (option === "--replay" && value) options.replay = value;
     else if (option !== "--")
       throw new Error(
-        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge; without it the first detector judges. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips the judge and counts reference comments against every candidate.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts.",
+        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge; without it the first detector judges. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips the judge and counts reference comments against every candidate.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts. Missing passes (a run cut short) are run live.",
       );
     else index -= 1;
   }
@@ -64,17 +64,23 @@ function parse(args: string[]) {
 
 type SavedPass = { phase: string; agent?: string; survey?: unknown[]; candidates?: unknown[] };
 
-/** Serves saved detector passes in order, so a judge change can be measured without paying for detection again. */
-function replayProvider(passes: SavedPass[]): ModelProvider {
+/**
+ * Serves saved detector passes in order, so a judge change can be measured without paying for
+ * detection again. Once they run out, the real detectors take over in their usual rotation, so a
+ * run cut short by a usage limit resumes from the first missing pass.
+ */
+function replayProvider(passes: SavedPass[], detectors: ModelProvider[]): ModelProvider {
   let served = 0;
+  let live: ModelProvider | undefined;
   return {
     get name() {
-      return passes[Math.max(0, served - 1)]?.agent;
+      return live?.name ?? passes[Math.max(0, served - 1)]?.agent;
     },
-    async complete() {
+    async complete(request) {
       const pass = passes[served++];
-      if (!pass) throw new Error("The replayed output has fewer detector passes than this run needs; use the same --max-parts.");
-      return { output: { survey: pass.survey ?? [], findings: pass.candidates ?? [] }, durationMs: 0 };
+      if (pass) return { output: { survey: pass.survey ?? [], findings: pass.candidates ?? [] }, durationMs: 0 };
+      live = detectors[(served - 1) % detectors.length]!;
+      return live.complete(request);
     },
   };
 }
@@ -203,7 +209,7 @@ async function main() {
           const report = await withReviewContext(
             { repository, base: revisions.base, head: revisions.head },
             (context, checkout, sources) =>
-              review(context, replayed ? replayProvider(replayed) : spec.detectors.map((detector) => agents[detector]({ checkout })), {
+              review(context, replayed ? replayProvider(replayed, spec.detectors.map((detector) => agents[detector]({ checkout }))) : spec.detectors.map((detector) => agents[detector]({ checkout })), {
                 checkout,
                 scopedSources: options.scoped ? sources : undefined,
                 maxParts: options.maxParts,
