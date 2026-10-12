@@ -42,7 +42,7 @@ Save a concise audit explanation, not a private thought transcript. Observations
 Return JSON matching the supplied schema, without markdown or extra text.`;
 
 // Only the counter-review applies the acceptance bar; the detector proposes candidates for it.
-const judgeRules = `Accept only actionable bugs with a reachable scenario and material impact.
+const judgeRules = `Accept a candidate when the change makes the code do the wrong thing in a scenario a user or an API client can reach. A rare trigger, a display-only effect, a recoverable outcome or a hand-built request does not disqualify it; reviewers flag those as medium-severity bugs. Reject when the claim is incorrect, the behaviour predates the change, or a guard or caller defeats the scenario. Reject hardening that is not a bug: a client-side validation gap the API still rejects with a clear error, a missing limit on input the server stores and uses without failing, and a race with no concrete sequence of user actions that triggers it.
 The AST graph is incomplete. Unresolved calls and missing context do not prove a bug; look for the missing context before abstaining. If evidence is still insufficient, abstain.
 Missing safeguards in supplied snippets do not prove their absence elsewhere.
 When the change adds a user action that acts on a selected account, provider or configuration, judge the action against that selection, not against the component that produced the error. A pre-existing probe that ignores the selection does not excuse a new remedy that ignores it too: if a user with several configured accounts can trigger the action on one and have it affect another, that is a reachable regression introduced by the change.`;
