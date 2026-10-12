@@ -270,16 +270,17 @@ describe("counter-review", () => {
       ["validator", "claude"],
     ]);
   });
-  it("collapses accepted findings within three lines of each other into the strongest one", async () => {
+  it("collapses accepted findings within three lines from different detectors, but keeps one detector's neighbours", async () => {
     const twoLines = { ...context, changes: [{ ...context.changes[0]!, reviewLines: [2, 3] }] };
     const weaker = { ...finding, title: "Same bug, other line", line: 3, severity: "medium" };
-    const { model } = provider([
-      { findings: [weaker, finding] },
-      { decisions: [1, 2].map((candidateId) => ({ candidateId, verdict: "accept", audit, reason: "Reachable." })) },
-    ]);
-    const report = await review(twoLines, model);
+    const accept = (count: number) => ({ decisions: Array.from({ length: count }, (_, i) => ({ candidateId: i + 1, verdict: "accept", audit, reason: "Reachable." })) });
+    const a = provider([{ findings: [weaker] }, accept(2)]);
+    const b = provider([{ findings: [finding] }]);
+    const report = await review(twoLines, [{ ...a.model, name: "a" }, { ...b.model, name: "b" }]);
     expect(report.findings).toEqual([finding]);
-    expect(report.records[0]).toMatchObject({ verdict: "reject", reason: "Duplicate of an accepted finding." });
+    expect(report.records[0]).toMatchObject({ agent: "a", verdict: "reject", reason: "Duplicate of an accepted finding." });
+    const single = provider([{ findings: [weaker, finding] }, accept(2)]);
+    expect((await review(twoLines, single.model)).findings).toHaveLength(2);
   });
   it("accepts head evidence the agent read from the checkout and rejects ranges that do not exist", async () => {
     const checkout = await mkdtemp(join(tmpdir(), "auto-review-retrieved-"));

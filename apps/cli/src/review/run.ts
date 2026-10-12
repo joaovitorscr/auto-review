@@ -249,13 +249,18 @@ export async function review(
   records.sort((a, b) => a.candidateId - b.candidateId);
   const rank = { critical: 0, high: 1, medium: 2 };
   const byStrength = (a: Finding, b: Finding) => rank[a.severity] - rank[b.severity] || b.confidence - a.confidence;
-  // Detectors often report one bug at neighbouring lines; publish the strongest of each cluster.
+  // Two detectors often report one bug at neighbouring lines; publish the strongest. One detector's
+  // neighbouring findings are usually distinct bugs in the same handler, so those all stay.
   const kept: Finding[] = [];
+  const keptBy: Array<string | undefined> = [];
   for (const record of records.filter((entry) => entry.verdict === "accept").sort((a, b) => byStrength(a.finding, b.finding))) {
-    if (kept.some((finding) => finding.file === record.finding.file && Math.abs(finding.line - record.finding.line) <= 3)) {
+    if (kept.some((finding, index) => keptBy[index] !== record.agent && finding.file === record.finding.file && Math.abs(finding.line - record.finding.line) <= 3)) {
       record.verdict = "reject";
       record.reason = "Duplicate of an accepted finding.";
-    } else kept.push(record.finding);
+    } else {
+      kept.push(record.finding);
+      keptBy.push(record.agent);
+    }
   }
   const findings = kept;
   return { ...metadata, findings };
