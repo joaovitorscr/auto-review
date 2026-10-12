@@ -9,6 +9,7 @@ import type { AgentName } from "./agent-spec.js";
 import type { ModelProvider } from "./review/agent.js";
 import { claudeProvider } from "./review/claude.js";
 import { codexProvider } from "./review/codex.js";
+import { batchContext } from "./review/context.js";
 import { withReviewContext } from "./review/git.js";
 import { prepareDetection, review } from "./review/run.js";
 
@@ -25,17 +26,18 @@ type Label = {
   // Another reviewer's comments on the same revisions, used to measure overlap with it.
   // A comment may list extra anchors: other places the same bug can be reported (e.g. the implementation
   // when the reviewer commented at the call site). A finding within 15 lines of any anchor counts.
-  reference?: { reviewer: string; comments: Array<{ file: string; line: number; severity: string; title: string; anchors?: Array<{ file: string; line: number }> }> };
+  // `needs` lists the head ranges a reviewer must see to find the bug; --context-recall checks the detector batches contain them.
+  reference?: { reviewer: string; comments: Array<{ file: string; line: number; severity: string; title: string; anchors?: Array<{ file: string; line: number }>; needs?: Array<{ file: string; lines: [number, number]; why?: string }> }> };
 } & (
   | { kind: "regression"; locations: Array<{ file: string; lines: [number, number] }> }
   | { kind: "none" }
 );
 
 function parse(args: string[]) {
-  const options = { agents: [] as string[], split: "dev", only: "", replay: "", scoped: false, dryRun: false, detectorOnly: false, maxParts: 4 };
+  const options = { agents: [] as string[], split: "dev", only: "", replay: "", scoped: false, dryRun: false, detectorOnly: false, contextRecall: false, maxParts: 4 };
   for (let index = 0; index < args.length; index += 1) {
     const [option, value] = [args[index], args[index + 1] ?? ""];
-    const flags = { "--scoped": "scoped", "--dry-run": "dryRun", "--detector-only": "detectorOnly" } as const;
+    const flags = { "--scoped": "scoped", "--dry-run": "dryRun", "--detector-only": "detectorOnly", "--context-recall": "contextRecall" } as const;
     if (option in flags) {
       options[flags[option as keyof typeof flags]] = true;
       continue;
@@ -50,7 +52,7 @@ function parse(args: string[]) {
     else if (option === "--replay" && value) options.replay = value;
     else if (option !== "--")
       throw new Error(
-        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--dry-run] [--max-parts N] [--replay output.json]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge; without it the first detector judges. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips the judge and counts reference comments against every candidate.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts.",
+        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge; without it the first detector judges. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips the judge and counts reference comments against every candidate.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts.",
       );
     else index -= 1;
   }
@@ -131,6 +133,48 @@ async function main() {
       : await buildRepository(directory, name);
     const revisions = label.source ?? { base: "HEAD~1", head: "HEAD" };
     try {
+      if (options.contextRecall) {
+        const comments = label.reference?.comments ?? [];
+        if (!comments.length) continue;
+        const recall = await withReviewContext(
+          { repository, base: revisions.base, head: revisions.head },
+          async (context) => {
+            // File-mode batches only; scoped batches carry their own excerpt shape.
+            const batches = batchContext(context);
+            const inBatch = (file: string, lines: [number, number]) =>
+              batches.some(
+                (batch) =>
+                  batch.snippets.some((snippet) => snippet.revision === "head" && snippet.file === file && snippet.startLine <= lines[0] && snippet.endLine >= lines[1]) ||
+                  batch.changes.some((change) => change.file === file && change.hunks.some((hunk) => hunk.newStart <= lines[0] && hunk.newStart + hunk.newLines - 1 >= lines[1])),
+              );
+            // Why a range is missing: the file was never indexed, the range was retrieved but dropped by
+            // the budget, or no retrieval rule reached it at all.
+            const omittedRanges = context.omitted.flatMap((entry) => {
+              const match = /^(?:\w+:)?head:(.+):(\d+)-(\d+)$/.exec(entry);
+              return match ? [{ file: match[1]!, start: Number(match[2]), end: Number(match[3]) }] : [];
+            });
+            const reason = (file: string, lines: [number, number]) =>
+              context.skipped.includes(file)
+                ? "skipped file"
+                : omittedRanges.some((range) => range.file === file && range.start <= lines[1] && range.end >= lines[0])
+                  ? "retrieved, dropped by budget"
+                  : "never retrieved";
+            return comments.map((comment) => {
+              // Without explicit needs, seeing the commented line itself (or any anchor) is enough.
+              const around = (anchor: { file: string; line: number }) => ({ file: anchor.file, lines: [Math.max(1, anchor.line - 5), anchor.line + 5] as [number, number] });
+              const anchors = [comment, ...(comment.anchors ?? [])].map(around);
+              const needs = comment.needs ?? (anchors.some((need) => inBatch(need.file, need.lines)) ? [] : [anchors[0]!]);
+              const missing = needs.filter((need) => !inBatch(need.file, need.lines)).map((need) => ({ ...need, reason: reason(need.file, need.lines) }));
+              return { file: comment.file, line: comment.line, severity: comment.severity, visible: missing.length === 0, missing };
+            });
+          },
+        );
+        const visible = recall.filter((comment) => comment.visible).length;
+        process.stdout.write(`${name}: ${visible}/${recall.length} comments fully visible to the detector\n`);
+        for (const comment of recall.filter((entry) => !entry.visible))
+          process.stdout.write(`  ${comment.severity} ${comment.file}:${comment.line} missing ${comment.missing.map((need) => `${need.file}:${need.lines[0]}-${need.lines[1]} (${need.reason})`).join(", ")}\n`);
+        continue;
+      }
       if (options.dryRun) {
         const summary = await withReviewContext(
           { repository, base: revisions.base, head: revisions.head },
@@ -280,7 +324,7 @@ async function main() {
       if (!label.source) await rm(repository, { recursive: true, force: true });
     }
   }
-  if (options.dryRun) return;
+  if (options.dryRun || options.contextRecall) return;
   const destination = join(WORKSPACE_ROOT, "outputs", `eval-${Date.now()}.json`);
   await mkdir(dirname(destination), { recursive: true });
   await writeFile(destination, `${JSON.stringify(results, null, 2)}\n`, "utf8");
