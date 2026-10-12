@@ -95,6 +95,30 @@
       }
     },
     {
+      "case": "othos-31-full-pr",
+      "split": "holdout",
+      "agent": "codex+claude (survey prompt)",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-11",
+      "source": "eval-1791740006971.json",
+      "outcome": "found",
+      "candidates": 9,
+      "extraFindings": 6,
+      "costUsd": 0.78,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 4,
+        "total": 6,
+        "foundLines": [
+          "apps/web/src/components/workspace-app.tsx:1703",
+          "packages/ui/src/components/calendar.tsx:162",
+          "apps/api/src/modules/workspaces/analytics-routes.ts:75",
+          "apps/web/src/lib/query-client.ts:23"
+        ]
+      },
+      "note": "Counted 4/6; by content 6/6 (workspace-app.tsx:444 found at :404, analytics-routes.ts:91 found at :107; anchors added). 9 accepted, judge rejected none. workspace-app.tsx:495 duplicates the query-client.ts:23 hit at its caller. True extras: pagination retry loop (:1765) and fractional limit (:129), both plausible."
+    },
+    {
       "case": "othos-34-full-pr",
       "split": "holdout",
       "agent": "claude",
@@ -112,6 +136,28 @@
           "apps/worker/src/schedule.ts:208"
         ]
       }
+    },
+    {
+      "case": "othos-34-full-pr",
+      "split": "holdout",
+      "agent": "codex+claude (survey prompt)",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-11",
+      "source": "eval-1791740282623.json",
+      "outcome": "found",
+      "candidates": 5,
+      "extraFindings": 1,
+      "costUsd": 0.94,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 2,
+        "total": 3,
+        "foundLines": [
+          "apps/web/src/components/workspace/workspace-pages.tsx:480",
+          "apps/api/src/modules/workspaces/analytics-routes.ts:1495"
+        ]
+      },
+      "note": "2/3. schedule.ts:208 was proposed (:210, dedup across upgrades) and the judge rejected it as a narrow upgrade edge case. Extra acceptance.test.ts:30 (needs a provisioned database) is likely a false positive."
     },
     {
       "case": "othos-35-full-pr",
