@@ -224,6 +224,8 @@ export async function review(
     });
     const { output: validated, ...validatorPass } = validation;
     passes.push({ phase: "validator", agent: judge.name, ...validatorPass });
+    // Reported before parsing so a malformed decision list does not lose the paid pass.
+    options.onPass?.({ phase: "validator", agent: judge.name, ...validatorPass, candidates: [] });
     const decisions = parseDecisions(validated);
     if (
       decisions.length !== eligible.length ||
