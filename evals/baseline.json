@@ -382,18 +382,6 @@
       "reference": null
     },
     {
-      "case": "othos-36-full-pr",
-      "split": "holdout",
-      "agent": "claude",
-      "detectionMode": "file",
-      "recordedAt": "2026-10-02",
-      "source": "eval-1790968213618.json",
-      "outcome": "missed",
-      "extraFindings": 0,
-      "costUsd": 2.93,
-      "reference": null
-    },
-    {
       "case": "othos-36-route-date",
       "split": "dev",
       "agent": "claude",
@@ -480,6 +468,30 @@
         ]
       },
       "note": "Same 10 Codex passes as eval-1791767861836.json (--max-parts 10), judge replayed with the reachable-scenario rule after trimming its prompt (218k -> 133k input tokens). Detector by content 7/14; the judge now keeps all 7 (previous run with the material-impact rule kept 2/7, rejecting deliver.ts:181, alerts.ts:249, :169, :248 and :29 as rare, display-only or recoverable). Cost: the judge accepted 21 of 22 candidates, so 14 extras by content. Spot-checked four: fractional page size (alert-routes:317) and the PATCH lost-update race (destination-routes:140) need hand-built or concurrent API calls; the occurrence-key duplicate email (alert-notifications:20) and the evaluator version bump causing 409s (alerts.ts:220) are reachable product bugs Macroscope did not flag. Earlier attempts: one hit the $1.50 budget ($1.95 lost), one failed audit parsing (cost unrecorded), one succeeded at $1.20."
+    },
+    {
+      "case": "othos-36-full-pr",
+      "split": "holdout",
+      "agent": "codex (detector only)",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-12",
+      "source": "eval-1791827716912.json",
+      "outcome": "proposed",
+      "candidates": 15,
+      "extraFindings": 0,
+      "costUsd": 0,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 4,
+        "total": 12,
+        "foundLines": [
+          "apps/api/src/modules/workspaces/alerts.ts:166 (at apps/worker/src/alerts.ts:45)",
+          "apps/api/src/modules/workspaces/management-routes.ts:741",
+          "apps/api/src/modules/workspaces/analytics-routes.ts:2176 (at :1893)",
+          "apps/api/src/modules/workspaces/management-routes.ts:771 (at :772)"
+        ]
+      },
+      "note": "11 Codex passes (--max-parts 11), judge skipped so it can be replayed. Detector by content 4/12 (2/12 by location before anchors). Highs: found 741 (impossible date) and 771 (same-team backdating); missed 371 (trustedUsageFilter omitted) and 1347 (any member can read another team's scoped dashboard, authorization). Also missed: 97 mixed-cost efficiency, 285 disabled users in teams, 5705 scoped roster, 5714 stale dashboard after mutation, 312 rank by tokens, 585 DELETE 204 parsed as JSON. 11 extras not yet judged."
     }
   ]
 }
