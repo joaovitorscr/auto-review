@@ -1,6 +1,6 @@
 {
   "note": "Latest completed eval result per case, agent and detection mode. Regenerate from outputs/eval-*.json; compare experiments against these numbers. Reference = Macroscope comments found within 15 lines by an accepted finding.",
-  "generatedAt": "2026-10-10",
+  "generatedAt": "2026-10-12",
   "results": [
     {
       "case": "cents-conversion",
