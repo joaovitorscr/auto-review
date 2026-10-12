@@ -382,18 +382,6 @@
       "reference": null
     },
     {
-      "case": "othos-36-full-pr",
-      "split": "holdout",
-      "agent": "claude",
-      "detectionMode": "file",
-      "recordedAt": "2026-10-02",
-      "source": "eval-1790968213618.json",
-      "outcome": "missed",
-      "extraFindings": 0,
-      "costUsd": 2.93,
-      "reference": null
-    },
-    {
       "case": "othos-36-route-date",
       "split": "dev",
       "agent": "claude",
@@ -480,6 +468,40 @@
         ]
       },
       "note": "Same 10 Codex passes as eval-1791767861836.json (--max-parts 10), judge replayed with the reachable-scenario rule after trimming its prompt (218k -> 133k input tokens). Detector by content 7/14; the judge now keeps all 7 (previous run with the material-impact rule kept 2/7, rejecting deliver.ts:181, alerts.ts:249, :169, :248 and :29 as rare, display-only or recoverable). Cost: the judge accepted 21 of 22 candidates, so 14 extras by content. Spot-checked four: fractional page size (alert-routes:317) and the PATCH lost-update race (destination-routes:140) need hand-built or concurrent API calls; the occurrence-key duplicate email (alert-notifications:20) and the evaluator version bump causing 409s (alerts.ts:220) are reachable product bugs Macroscope did not flag. Earlier attempts: one hit the $1.50 budget ($1.95 lost), one failed audit parsing (cost unrecorded), one succeeded at $1.20."
+    },
+    {
+      "case": "othos-36-full-pr",
+      "split": "holdout",
+      "agent": "codex+claude (severity levels, medium cap 6)",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-12",
+      "source": "eval-1791828613409.json",
+      "outcome": "found",
+      "candidates": 15,
+      "extraFindings": 4,
+      "costUsd": 1.01,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 3,
+        "total": 12,
+        "foundLines": [
+          "apps/api/src/modules/workspaces/management-routes.ts:741",
+          "apps/api/src/modules/workspaces/analytics-routes.ts:2176 (at :1893)",
+          "apps/api/src/modules/workspaces/management-routes.ts:771 (at :772)"
+        ],
+        "byLevel": {
+          "High": {
+            "found": 2,
+            "total": 4
+          },
+          "Medium": {
+            "found": 1,
+            "total": 8
+          }
+        },
+        "deferred": 1
+      },
+      "note": "Judge replayed from the 11 detector-only Codex passes in eval-1791827716912.json. Detector by content 4/12; judge accepted 13/15 (rejected one hardening finding correctly and one unreachable scenario), posted 6 mediums, deferred 6 mediums and 1 low. The medium cap deferred the alerts.ts:166 hit (worker/alerts.ts:45), so posted recall is 3/12: High 2/4, Medium 1/8. The judge rated every accepted finding medium or low, including the two Macroscope Highs (741 impossible date reaches the date column, 771 backdating hits a check constraint), so our high definition misses 'unhandled server error from a request the product accepts'. Missed Highs 371 and 1347 were never proposed by the detector. Extras posted: 4 mediums (team-import:55 same bug as 741, pages:6268, app:466, routes:1893 partial)."
     }
   ]
 }
