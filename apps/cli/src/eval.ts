@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseAgentSpec } from "./agent-spec.js";
 import type { AgentName } from "./agent-spec.js";
+import type { ModelProvider } from "./review/agent.js";
 import { claudeProvider } from "./review/claude.js";
 import { codexProvider } from "./review/codex.js";
 import { withReviewContext } from "./review/git.js";
@@ -31,7 +32,7 @@ type Label = {
 );
 
 function parse(args: string[]) {
-  const options = { agents: [] as string[], split: "dev", only: "", scoped: false, dryRun: false, detectorOnly: false, maxParts: 4 };
+  const options = { agents: [] as string[], split: "dev", only: "", replay: "", scoped: false, dryRun: false, detectorOnly: false, maxParts: 4 };
   for (let index = 0; index < args.length; index += 1) {
     const [option, value] = [args[index], args[index + 1] ?? ""];
     const flags = { "--scoped": "scoped", "--dry-run": "dryRun", "--detector-only": "detectorOnly" } as const;
@@ -46,9 +47,10 @@ function parse(args: string[]) {
     else if (option === "--split" && ["dev", "holdout", "all"].includes(value))
       options.split = value;
     else if (option === "--case" && value) options.only = value;
+    else if (option === "--replay" && value) options.replay = value;
     else if (option !== "--")
       throw new Error(
-        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--dry-run] [--max-parts N]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge; without it the first detector judges. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips the judge and counts reference comments against every candidate.",
+        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--dry-run] [--max-parts N] [--replay output.json]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge; without it the first detector judges. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips the judge and counts reference comments against every candidate.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts.",
       );
     else index -= 1;
   }
@@ -58,7 +60,34 @@ function parse(args: string[]) {
   return options;
 }
 
+type SavedPass = { phase: string; agent?: string; survey?: unknown[]; candidates?: unknown[] };
+
+/** Serves saved detector passes in order, so a judge change can be measured without paying for detection again. */
+function replayProvider(passes: SavedPass[]): ModelProvider {
+  let served = 0;
+  return {
+    get name() {
+      return passes[Math.max(0, served - 1)]?.agent;
+    },
+    async complete() {
+      const pass = passes[served++];
+      if (!pass) throw new Error("The replayed output has fewer detector passes than this run needs; use the same --max-parts.");
+      return { output: { survey: pass.survey ?? [], findings: pass.candidates ?? [] }, durationMs: 0 };
+    },
+  };
+}
+
 /** Builds a two-commit repository from a case's base/ and head/ trees and returns its path. */
+/** The detector passes an earlier eval output saved for a case, in the order they ran. */
+async function loadReplay(path: string, caseName: string) {
+  const results: Array<{ case: string; passes?: SavedPass[] }> = JSON.parse(await readFile(resolve(path), "utf8"));
+  const result = results.find((entry) => entry.case === caseName);
+  const passes = result?.passes?.filter((pass) => pass.phase === "detector") ?? [];
+  if (!passes.length) throw new Error(`${path} has no detector passes for ${caseName}.`);
+  if (passes.some((pass) => !pass.candidates)) throw new Error(`${path} predates per-pass candidates; it cannot be replayed.`);
+  return passes;
+}
+
 async function buildRepository(directory: string, name: string) {
   const root = await mkdtemp(join(tmpdir(), `auto-review-eval-${name}-`));
   const git = (...args: string[]) =>
@@ -123,11 +152,12 @@ async function main() {
         // Detector passes that finished before a failure; reported on error so paid work is not lost.
         const completed: Array<{ phase: string; agent?: string; durationMs: number; model?: string; turns?: number; usage?: unknown; survey?: unknown[]; candidates: unknown[] }> = [];
         const spec = parseAgentSpec(agent)!;
+        const replayed = options.replay ? await loadReplay(options.replay, name) : undefined;
         try {
           const report = await withReviewContext(
             { repository, base: revisions.base, head: revisions.head },
             (context, checkout, sources) =>
-              review(context, spec.detectors.map((detector) => agents[detector]({ checkout })), {
+              review(context, replayed ? replayProvider(replayed) : spec.detectors.map((detector) => agents[detector]({ checkout })), {
                 checkout,
                 scopedSources: options.scoped ? sources : undefined,
                 maxParts: options.maxParts,
@@ -173,7 +203,8 @@ async function main() {
               comments: overlap,
             },
             detectorOnly: options.detectorOnly,
-            passes: report.passes.map(({ phase, agent, durationMs, model, turns, toolCalls, usage, survey }) => ({ phase, agent, durationMs, model, turns, toolCalls, usage, survey })),
+            // Detector passes keep their candidates so a later --replay can rerun the judge alone.
+            passes: report.passes.map(({ phase, agent, durationMs, model, turns, toolCalls, usage, survey }, index) => ({ phase, agent, durationMs, model, turns, toolCalls, usage, survey, candidates: completed[index]?.candidates })),
             outcome: options.detectorOnly
               ? label.kind === "regression"
                 ? proposed
