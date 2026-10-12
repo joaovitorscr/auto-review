@@ -145,7 +145,8 @@ const array = (value: unknown, max = 30) => {
     throw new Error(`Expected an array with at most ${max} entries from the agent`);
   return value as unknown[];
 };
-function parseAudit(value: unknown) {
+/** Detector audits must argue from evidence; a judge decision may rest on its reason alone. */
+function parseAudit(value: unknown, options: { requireChecks: boolean } = { requireChecks: true }) {
   const audit = object(value);
   const observations = array(audit.observations).map((item) => {
     const observation = object(item);
@@ -163,7 +164,7 @@ function parseAudit(value: unknown) {
       summary: string(check.summary),
     };
   });
-  if (!observations.length || !counterChecks.length)
+  if (options.requireChecks && (!observations.length || !counterChecks.length))
     throw new Error("Audit needs observations and counter-checks");
   return {
     observations,
@@ -247,7 +248,7 @@ export function parseDecisions(value: unknown) {
       candidateId: integer(decision.candidateId),
       verdict,
       reason: string(decision.reason),
-      audit: parseAudit(decision.audit),
+      audit: parseAudit(decision.audit, { requireChecks: false }),
     } as const;
   });
 }

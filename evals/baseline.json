@@ -1,6 +1,6 @@
 {
   "note": "Latest completed eval result per case, agent and detection mode. Regenerate from outputs/eval-*.json; compare experiments against these numbers. Reference = Macroscope comments found within 15 lines by an accepted finding.",
-  "generatedAt": "2026-10-10",
+  "generatedAt": "2026-10-11",
   "results": [
     {
       "case": "cents-conversion",
@@ -95,6 +95,30 @@
       }
     },
     {
+      "case": "othos-31-full-pr",
+      "split": "holdout",
+      "agent": "codex+claude (survey prompt)",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-11",
+      "source": "eval-1791740006971.json",
+      "outcome": "found",
+      "candidates": 9,
+      "extraFindings": 6,
+      "costUsd": 0.78,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 4,
+        "total": 6,
+        "foundLines": [
+          "apps/web/src/components/workspace-app.tsx:1703",
+          "packages/ui/src/components/calendar.tsx:162",
+          "apps/api/src/modules/workspaces/analytics-routes.ts:75",
+          "apps/web/src/lib/query-client.ts:23"
+        ]
+      },
+      "note": "Counted 4/6; by content 6/6 (workspace-app.tsx:444 found at :404, analytics-routes.ts:91 found at :107; anchors added). 9 accepted, judge rejected none. workspace-app.tsx:495 duplicates the query-client.ts:23 hit at its caller. True extras: pagination retry loop (:1765) and fractional limit (:129), both plausible."
+    },
+    {
       "case": "othos-34-full-pr",
       "split": "holdout",
       "agent": "claude",
@@ -112,6 +136,28 @@
           "apps/worker/src/schedule.ts:208"
         ]
       }
+    },
+    {
+      "case": "othos-34-full-pr",
+      "split": "holdout",
+      "agent": "codex+claude (survey prompt)",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-11",
+      "source": "eval-1791740282623.json",
+      "outcome": "found",
+      "candidates": 5,
+      "extraFindings": 1,
+      "costUsd": 0.94,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 2,
+        "total": 3,
+        "foundLines": [
+          "apps/web/src/components/workspace/workspace-pages.tsx:480",
+          "apps/api/src/modules/workspaces/analytics-routes.ts:1495"
+        ]
+      },
+      "note": "2/3. schedule.ts:208 was proposed (:210, dedup across upgrades) and the judge rejected it as a narrow upgrade edge case. Extra acceptance.test.ts:30 (needs a provisioned database) is likely a false positive."
     },
     {
       "case": "othos-35-full-pr",
@@ -406,6 +452,28 @@
       "extraFindings": 0,
       "costUsd": 0.04,
       "reference": null
+    },
+    {
+      "case": "othos-37-full-pr",
+      "split": "holdout",
+      "agent": "codex+claude (survey prompt)",
+      "detectionMode": "file",
+      "recordedAt": "2026-10-11",
+      "source": "eval-1791768606556.json",
+      "outcome": "found",
+      "candidates": 22,
+      "extraFindings": 6,
+      "costUsd": 1.2,
+      "reference": {
+        "reviewer": "Macroscope",
+        "found": 2,
+        "total": 14,
+        "foundLines": [
+          "apps/web/src/components/workspace/alerts-page.tsx:205",
+          "apps/web/src/components/workspace/alert-policy-card.tsx:309"
+        ]
+      },
+      "note": "10 Codex passes (--max-parts 10, 2037 omitted ranges) from eval-1791767861836.json, judge replayed after trimming its prompt (218k -> 133k input tokens). Detector by content 7/14 (alerts.ts:303 at :249, policy-card:104 at :248, alerts-page:205 at :771, policy-card:431 at :169, workspace-pages:5687 at notification-destination-card:29, deliver.ts:181, policy-card:309; anchors added). Judge accepted 7, kept 2 of the 7 content hits: rejected deliver.ts:181, alerts.ts:249, :169, :248 and :29 as rare, display-only or recoverable; :309 (mute reset) was collapsed as a duplicate of the different :310 dialog-refresh bug. Comment 12 counts via :310, a different bug. First judge attempt hit the $1.50 budget ($1.95 lost); second returned an empty audit list and failed parsing (cost unrecorded)."
     }
   ]
 }
