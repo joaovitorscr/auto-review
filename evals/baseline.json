@@ -444,50 +444,58 @@
     {
       "case": "othos-37-full-pr",
       "split": "holdout",
-      "agent": "codex+claude (reachable-scenario judge rule)",
+      "agent": "codex+claude (severity levels, medium cap 6)",
       "detectionMode": "file",
       "recordedAt": "2026-10-12",
-      "source": "eval-1791826821800.json",
+      "source": "eval-1791829055738.json",
       "outcome": "found",
       "candidates": 22,
-      "extraFindings": 16,
-      "costUsd": 1.24,
+      "extraFindings": 4,
+      "costUsd": 1.27,
       "reference": {
         "reviewer": "Macroscope",
-        "found": 8,
+        "found": 4,
         "total": 14,
         "foundLines": [
-          "apps/worker/src/alerts.ts:303 (at :249)",
-          "apps/worker/src/deliver.ts:181",
+          "apps/web/src/components/workspace/alert-policy-card.tsx:243 (via :310, different bug)",
           "apps/web/src/components/workspace/alert-policy-card.tsx:104 (at :248)",
           "apps/web/src/components/workspace/alerts-page.tsx:205 (at :771)",
-          "apps/web/src/components/workspace/alert-policy-card.tsx:431 (at :169)",
-          "apps/web/src/components/workspace/workspace-pages.tsx:5687 (at notification-destination-card.tsx:29)",
-          "apps/web/src/components/workspace/alert-policy-card.tsx:309",
-          "apps/web/src/components/workspace/alert-policy-card.tsx:331 (at :313, location only)"
-        ]
+          "apps/web/src/components/workspace/alert-policy-card.tsx:309"
+        ],
+        "byLevel": {
+          "High": {
+            "found": 0,
+            "total": 1
+          },
+          "Medium": {
+            "found": 4,
+            "total": 13
+          }
+        },
+        "deferred": 1
       },
-      "note": "Same 10 Codex passes as eval-1791767861836.json (--max-parts 10), judge replayed with the reachable-scenario rule after trimming its prompt (218k -> 133k input tokens). Detector by content 7/14; the judge now keeps all 7 (previous run with the material-impact rule kept 2/7, rejecting deliver.ts:181, alerts.ts:249, :169, :248 and :29 as rare, display-only or recoverable). Cost: the judge accepted 21 of 22 candidates, so 14 extras by content. Spot-checked four: fractional page size (alert-routes:317) and the PATCH lost-update race (destination-routes:140) need hand-built or concurrent API calls; the occurrence-key duplicate email (alert-notifications:20) and the evaluator version bump causing 409s (alerts.ts:220) are reachable product bugs Macroscope did not flag. Earlier attempts: one hit the $1.50 budget ($1.95 lost), one failed audit parsing (cost unrecorded), one succeeded at $1.20."
+      "note": "Same 10 Codex passes (eval-1791767861836.json), judge replayed with severity levels. Detector by content 7/14. Judge accepted 17/22: posted 1 high + 6 mediums, deferred 5 mediums + 5 lows; the five hand-built-request extras all landed in low as intended. Rejected deliver.ts:181 (the High) as a 'design decision', alerts.ts:249 as a timing race under the new hardening clause, and :29; :169 deferred by the cap. The one posted high (destination-routes:37, Drizzle error unwrapping) was needs_more_context in the previous run and is unverified. Judge verdicts on the same evidence flipped between runs (181 accepted once, rejected twice)."
     },
     {
       "case": "othos-36-full-pr",
       "split": "holdout",
-      "agent": "codex+claude (severity levels, medium cap 6)",
+      "agent": "codex+claude (severity at decision point, medium cap 6)",
       "detectionMode": "file",
       "recordedAt": "2026-10-12",
-      "source": "eval-1791828613409.json",
+      "source": "eval-1791831038246.json",
       "outcome": "found",
       "candidates": 15,
-      "extraFindings": 4,
-      "costUsd": 1.01,
+      "extraFindings": 7,
+      "costUsd": 0.98,
       "reference": {
         "reviewer": "Macroscope",
-        "found": 3,
+        "found": 4,
         "total": 12,
         "foundLines": [
-          "apps/api/src/modules/workspaces/management-routes.ts:741",
+          "apps/api/src/modules/workspaces/management-routes.ts:741 (also team-import.ts:55)",
           "apps/api/src/modules/workspaces/analytics-routes.ts:2176 (at :1893)",
-          "apps/api/src/modules/workspaces/management-routes.ts:771 (at :772)"
+          "apps/api/src/modules/workspaces/management-routes.ts:771 (at :772)",
+          "apps/api/src/modules/workspaces/alerts.ts:166 (at worker/alerts.ts:45)"
         ],
         "byLevel": {
           "High": {
@@ -495,13 +503,13 @@
             "total": 4
           },
           "Medium": {
-            "found": 1,
+            "found": 2,
             "total": 8
           }
         },
-        "deferred": 1
+        "deferred": 0
       },
-      "note": "Judge replayed from the 11 detector-only Codex passes in eval-1791827716912.json. Detector by content 4/12; judge accepted 13/15 (rejected one hardening finding correctly and one unreachable scenario), posted 6 mediums, deferred 6 mediums and 1 low. The medium cap deferred the alerts.ts:166 hit (worker/alerts.ts:45), so posted recall is 3/12: High 2/4, Medium 1/8. The judge rated every accepted finding medium or low, including the two Macroscope Highs (741 impossible date reaches the date column, 771 backdating hits a check constraint), so our high definition misses 'unhandled server error from a request the product accepts'. Missed Highs 371 and 1347 were never proposed by the detector. Extras posted: 4 mediums (team-import:55 same bug as 741, pages:6268, app:466, routes:1893 partial)."
+      "note": "Judge replayed from the 11 detector-only Codex passes in eval-1791827716912.json, three times with the severity definitions restated at the decision point (eval-1791830937354, -1791830988920, -1791831038246): identical verdicts, levels and ordering in all three, $0.97-0.98 each. Posted 3 highs (741, 772, team-import:55, the CSV variant Macroscope lists under 741) and 6 mediums; posted recall 4/12, High 2/4, Medium 2/8, nothing deferred that Macroscope flagged. The 'high extra' is team-import:55, a content hit outside the 10-line location window. Earlier replays with the definitions only in the detector rules rated the same findings medium. Missed Highs 371 and 1347 were never proposed by the detector."
     }
   ]
 }
