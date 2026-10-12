@@ -180,12 +180,23 @@ async function main() {
           // A reference comment counts as found when an accepted finding lands within 15 lines of it,
           // or in detector-only mode any candidate, including ones the citation check rejected.
           const pool = options.detectorOnly ? report.records.map((record) => record.finding) : report.findings;
+          const near = (comment: { file: string; line: number; anchors?: Array<{ file: string; line: number }> }, findings: Array<{ file: string; line: number }>) =>
+            [comment, ...(comment.anchors ?? [])].some((anchor) =>
+              findings.some((finding) => finding.file === anchor.file && Math.abs(finding.line - anchor.line) <= 15),
+            );
           const overlap = label.reference?.comments.map((comment) => ({
             ...comment,
-            found: [comment, ...(comment.anchors ?? [])].some((anchor) =>
-              pool.some((finding) => finding.file === anchor.file && Math.abs(finding.line - anchor.line) <= 15),
-            ),
+            found: near(comment, pool),
+            // Accepted but held back by the severity cap, so the cap's cost stays visible.
+            deferred: !near(comment, pool) && near(comment, report.deferred),
           }));
+          // Recall per reference severity, so a missed High stands out from a missed Medium.
+          const byLevel = overlap && Object.fromEntries(
+            [...new Set(overlap.map((comment) => comment.severity))].map((level) => {
+              const comments = overlap.filter((comment) => comment.severity === level);
+              return [level, { found: comments.filter((comment) => comment.found).length, total: comments.length }];
+            }),
+          );
           // The detector saw the bug, but the citation check or counter-review withheld it.
           const withheld = report.records.some(
             (record) => record.verdict !== "accept" && matches(record.finding),
@@ -200,6 +211,8 @@ async function main() {
               reviewer: label.reference!.reviewer,
               found: overlap.filter((comment) => comment.found).length,
               total: overlap.length,
+              deferred: overlap.filter((comment) => comment.deferred).length,
+              byLevel,
               comments: overlap,
             },
             detectorOnly: options.detectorOnly,
@@ -224,7 +237,9 @@ async function main() {
                   : "clean",
             candidates: report.records.length,
             extraFindings: report.findings.filter((finding) => !matches(finding)).length,
+            extrasByLevel: Object.fromEntries(["critical", "high", "medium"].map((level) => [level, report.findings.filter((finding) => finding.severity === level && !matches(finding)).length])),
             findings: report.findings,
+            deferred: report.deferred,
             status: report.status,
             detectionMode: report.detectionMode,
             scopeCount: report.scopeCount,
@@ -271,7 +286,7 @@ async function main() {
   await writeFile(destination, `${JSON.stringify(results, null, 2)}\n`, "utf8");
   const rows = results.map(
     (result) =>
-      `| ${result.case} | ${result.split} | ${result.expected} | ${result.agent} | ${result.outcome} | ${"candidates" in result ? result.candidates : "-"} | ${"extraFindings" in result ? result.extraFindings : "-"} | ${(result.durationMs / 1000).toFixed(0)}s | ${"costUsd" in result && result.costUsd !== undefined ? `$${result.costUsd.toFixed(2)}` : "-"} | ${"reference" in result && result.reference ? `${result.reference.found}/${result.reference.total} of ${result.reference.reviewer}` : "-"} |`,
+      `| ${result.case} | ${result.split} | ${result.expected} | ${result.agent} | ${result.outcome} | ${"candidates" in result ? result.candidates : "-"} | ${"extrasByLevel" in result && result.extrasByLevel ? `${result.extraFindings}${(result.extrasByLevel.high ?? 0) + (result.extrasByLevel.critical ?? 0) ? ` (${(result.extrasByLevel.high ?? 0) + (result.extrasByLevel.critical ?? 0)} high+)` : ""}` : "-"} | ${(result.durationMs / 1000).toFixed(0)}s | ${"costUsd" in result && result.costUsd !== undefined ? `$${result.costUsd.toFixed(2)}` : "-"} | ${"reference" in result && result.reference ? `${result.reference.found}/${result.reference.total} of ${result.reference.reviewer}${Object.entries(result.reference.byLevel ?? {}).map(([level, count]) => `, ${level} ${count.found}/${count.total}`).join("")}${result.reference.deferred ? `, ${result.reference.deferred} deferred` : ""}` : "-"} |`,
   );
   process.stdout.write(
     [
