@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
-import { batchContext } from "./context.js";
+import { batchContext, hunksNear } from "./context.js";
 import { scopedDetectorBatches } from "./scoped-batches.js";
 import type { ReviewContext } from "./context.js";
 import type { ModelProvider, ModelResponse } from "./agent.js";
@@ -47,6 +47,18 @@ The AST graph is incomplete. Unresolved calls and missing context do not prove a
 Missing safeguards in supplied snippets do not prove their absence elsewhere.
 When the change adds a user action that acts on a selected account, provider or configuration, judge the action against that selection, not against the component that produced the error. A pre-existing probe that ignores the selection does not excuse a new remedy that ignores it too: if a user with several configured accounts can trigger the action on one and have it affect another, that is a reachable regression introduced by the change.`;
 
+/** The changed hunks around each candidate's line and head evidence, so the judge sees the before and after without whole-file patches. */
+function candidateDiff(context: ReviewContext, candidates: Array<{ finding: Finding }>) {
+  return context.changes.flatMap((change) => {
+    const lines = candidates.flatMap(({ finding }) => [
+      ...(finding.file === change.file ? [finding.line] : []),
+      ...finding.evidence.filter((entry) => entry.revision === "head" && entry.file === change.file).flatMap((entry) => [entry.startLine, entry.endLine]),
+    ]);
+    const patch = lines.length ? hunksNear(change.patch, lines) : "";
+    return patch ? [{ file: change.file, status: change.status, patch }] : [];
+  });
+}
+
 /** Preserve independent context for counter-checks, with explicit omissions at the budget. */
 export function validationContext(context: ReviewContext, maxCharacters = 80_000, preferredFiles: string[] = []) {
   const snippets: ReviewContext["snippets"] = [];
@@ -64,7 +76,11 @@ export function validationContext(context: ReviewContext, maxCharacters = 80_000
     snippets.push(entry);
     characters += size;
   }
-  return { snippets, omitted };
+  // The judge reads omissions as missing context, not evidence; a long list only crowds out code.
+  const related = omitted.filter((entry) => preferredFiles.some((file) => entry.includes(file)));
+  const shown = related.slice(0, 40);
+  if (omitted.length > shown.length) shown.push(`${omitted.length - shown.length} more omitted ranges`);
+  return { snippets, omitted: shown };
 }
 
 /**
@@ -204,7 +220,7 @@ export async function review(
     const judge = options.validator ?? providers[0]!;
     const validation = await judge.complete({
       schema: validationSchema,
-      prompt: `${rules}\n${judgeRules}\n\nYou are the independent counter-reviewer. Try to disprove every candidate. Check whether the bug already existed, whether guards or callers defeat the scenario, and whether evidence establishes each step. Accept only when the change introduces the claimed reachable regression. A request any authenticated client can send counts as reachable even when the bundled UI never sends it: new validation that lets malformed input crash with a 500 instead of a 4xx is a material bug. Reject incorrect claims. Use needs_more_context when you cannot establish or disprove the claim. Return exactly one decision per candidateId. Do not rewrite findings. Give a brief evidence-based reason, not private reasoning.\n\nCANDIDATES\n${JSON.stringify(eligible)}\n\nRETRIEVED HEAD SOURCE CITED BY CANDIDATES\n${JSON.stringify(retrieved)}\n\nDIFF OF CANDIDATE FILES\n${JSON.stringify(context.changes.filter((change) => eligible.some((candidate) => candidate.finding.file === change.file)))}\n\nINDEPENDENT CONTEXT FOR COUNTER-CHECKS\n${JSON.stringify(validationContext(context, 80_000, relatedFiles))}\n\nConsider this context even when candidates did not cite it. Base comparison leads are not proof of equivalence. Read head files when a check needs more; omitted context is not evidence of absent behavior.`,
+      prompt: `${rules}\n${judgeRules}\n\nYou are the independent counter-reviewer. Try to disprove every candidate. Check whether the bug already existed, whether guards or callers defeat the scenario, and whether evidence establishes each step. Accept only when the change introduces the claimed reachable regression. A request any authenticated client can send counts as reachable even when the bundled UI never sends it: new validation that lets malformed input crash with a 500 instead of a 4xx is a material bug. Reject incorrect claims. Use needs_more_context when you cannot establish or disprove the claim. Return exactly one decision per candidateId. Do not rewrite findings. Give a brief evidence-based reason, not private reasoning.\n\nCANDIDATES\n${JSON.stringify(eligible)}\n\nRETRIEVED HEAD SOURCE CITED BY CANDIDATES\n${JSON.stringify(retrieved)}\n\nDIFF OF CANDIDATE FILES NEAR THE CANDIDATES\n${JSON.stringify(candidateDiff(context, eligible))}\n\nINDEPENDENT CONTEXT FOR COUNTER-CHECKS\n${JSON.stringify(validationContext(context, 80_000, relatedFiles))}\n\nConsider this context even when candidates did not cite it. Base comparison leads are not proof of equivalence. Read head files when a check needs more; omitted context is not evidence of absent behavior.`,
     });
     const { output: validated, ...validatorPass } = validation;
     passes.push({ phase: "validator", agent: judge.name, ...validatorPass });
