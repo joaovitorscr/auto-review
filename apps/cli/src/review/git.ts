@@ -11,6 +11,8 @@ const exec = promisify(execFile);
 // Docs, lockfiles, images and ignore files cannot change runtime behavior, so they do not make a review partial.
 const nonCode =
   /(^|\/)(LICENSE|CODEOWNERS|\.gitignore|\.gitattributes|\.DS_Store|[^/]+\.(md|mdx|txt|lock|png|jpe?g|gif|svg|ico|webp)|pnpm-lock\.yaml|package-lock\.json)$/i;
+// Schema and migration files have no AST here but decide what the code's inputs reach; they are reviewed as text.
+const textReviewed = /\.(sql|prisma|graphql|gql)$/i;
 const git = async (root: string, args: string[]) =>
   (await exec("git", ["-C", root, ...args], { maxBuffer: 20 * 1024 * 1024 })).stdout;
 
@@ -51,7 +53,9 @@ export async function withReviewContext<T>(
     for (let position = 0; position < changed.length - 1; position += 2) {
       const status = changed[position]!;
       const file = changed[position + 1]!;
-      if (!isIndexablePath(file) || (status !== "D" && !after.has(file))) {
+      if (textReviewed.test(file) && status !== "D" && !after.has(file))
+        after.set(file, await readFile(join(checkout, file), "utf8").catch(() => ""));
+      if (!(isIndexablePath(file) || textReviewed.test(file)) || (status !== "D" && !after.has(file))) {
         (nonCode.test(file) ? ignored : skipped).push(file);
         continue;
       }
