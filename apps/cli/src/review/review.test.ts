@@ -141,6 +141,19 @@ describe("counter-review", () => {
     expect(prompts[1]).not.toContain("other.ts:59-59");
   });
 
+  it("keeps a judge decision whose audit lists no observations or counter-checks, and reports the judge pass before parsing", async () => {
+    const passes: string[] = [];
+    const { model } = provider([
+      { findings: [finding] },
+      { decisions: [{ candidateId: 1, verdict: "reject", reason: "The caller divides by 100.", audit: { observations: [], conclusion: "Pre-existing.", counterChecks: [], uncertainties: [] } }] },
+    ]);
+    const report = await review(context, model, { onPass: (pass) => void passes.push(pass.phase) });
+    expect(report.records[0]?.verdict).toBe("reject");
+    expect(passes).toEqual(["detector", "validator"]);
+    const bad = provider([{ findings: [{ ...finding, audit: { ...audit, counterChecks: [] } }] }]);
+    await expect(review(context, bad.model)).rejects.toThrow("Audit needs observations and counter-checks");
+  });
+
   it("publishes accepted candidates and keeps rejected and uncertain decisions", async () => {
     const { model, prompts } = provider([
       {
