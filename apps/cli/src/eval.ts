@@ -156,9 +156,11 @@ async function main() {
             const reason = (file: string, lines: [number, number]) =>
               context.skipped.includes(file)
                 ? "skipped file"
-                : omittedRanges.some((range) => range.file === file && range.start <= lines[1] && range.end >= lines[0])
-                  ? "retrieved, dropped by budget"
-                  : "never retrieved";
+                : context.snippets.some((snippet) => snippet.revision === "head" && snippet.file === file && snippet.startLine <= lines[1] && snippet.endLine >= lines[0])
+                  ? "packed, dropped by the batch"
+                  : omittedRanges.some((range) => range.file === file && range.start <= lines[1] && range.end >= lines[0])
+                    ? "retrieved, dropped by the pack budget"
+                    : "never retrieved";
             return comments.map((comment) => {
               // Without explicit needs, seeing the commented line itself (or any anchor) is enough.
               const around = (anchor: { file: string; line: number }) => ({ file: anchor.file, lines: [Math.max(1, anchor.line - 5), anchor.line + 5] as [number, number] });

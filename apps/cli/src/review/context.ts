@@ -92,11 +92,14 @@ export function packContext(
   const { index, before, after, ...metadata } = input;
   const snippets: Snippet[] = [];
   const omitted = new Set<string>();
-  let remaining = maxCharacters - JSON.stringify(metadata).length;
-  if (remaining < 0)
+  if (JSON.stringify(metadata).length > maxCharacters)
     throw new Error(
       `The diff and instructions exceed the ${maxCharacters.toLocaleString("en-US")}-character context budget. Review a smaller commit range.`,
     );
+  // The budget is for retrieved code only. Charging the diff against it left large PRs with
+  // almost no context (othos-36: 377k of diff, 11 snippets kept, 3,832 dropped) while the
+  // per-pass batches, which enforce their own limit, sat a third empty.
+  let remaining = maxCharacters;
   const add = (
     file: string,
     revision: "base" | "head",
