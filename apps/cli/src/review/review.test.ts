@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseArguments } from "../input.js";
-import { batchContext, packContext, parseHunks, reviewLines } from "./context.js";
+import { batchContext, hunksNear, packContext, parseHunks, reviewLines } from "./context.js";
 import type { ReviewContext } from "./context.js";
 import { withReviewContext } from "./git.js";
 import { review, renderReview, validationContext } from "./run.js";
@@ -97,6 +97,15 @@ describe("review inputs and diff ranges", () => {
     expect(reviewLines("@@ -1,2 +1 @@\n x\n-y", 1)).toEqual([1]);
     expect(reviewLines("@@ -1 +0,0 @@\n-x", 0)).toEqual([]);
   });
+  it("keeps only the patch lines near the given head lines", () => {
+    const far = "@@ -500,2 +500,3 @@\n a\n+b\n c\n";
+    const near = "@@ -1,2 +1,3 @@\n x\n+y\n z\n";
+    expect(hunksNear(near + far, [30])).toBe("@@ head line 1 @@\n x\n+y\n z");
+    expect(hunksNear(near + far, [470], 40)).toBe("@@ head line 500 @@\n a\n+b\n c");
+    expect(hunksNear(near + far, [200])).toBe("");
+    const long = "@@ -0,0 +1,200 @@\n" + Array.from({ length: 200 }, (_, i) => `+line${i + 1}`).join("\n") + "\n";
+    expect(hunksNear(long, [150], 2)).toBe("@@ head line 148 @@\n+line148\n+line149\n+line150\n+line151\n+line152");
+  });
 });
 
 describe("counter-review", () => {
@@ -113,9 +122,36 @@ describe("counter-review", () => {
     expect(prompts[1]).toContain("judge the action against that selection");
     const budget = JSON.stringify(independent).length + 1;
     expect(validationContext(input, budget, ["probe.ts"]).snippets).toEqual([independent]);
-    expect(validationContext(input, 1)).toEqual({ snippets: [], omitted: [
-      "validator:head:amount.ts:1-3", "validator:head:probe.ts:1-1",
+    expect(validationContext(input, 1, ["probe.ts"])).toEqual({ snippets: [], omitted: [
+      "validator:head:probe.ts:1-1", "1 more omitted ranges",
     ] });
+  });
+
+  it("shows the judge only the changed hunks near candidates, not whole-file patches", async () => {
+    const far = "@@ -900,2 +900,3 @@\n a\n+unrelated();\n c\n";
+    const change = { ...context.changes[0]!, patch: patch + far, hunks: parseHunks(patch + far) };
+    const { model, prompts } = provider([
+      { findings: [finding] },
+      { decisions: [{ candidateId: 1, verdict: "accept", reason: "Confirmed", audit }] },
+    ]);
+    await review({ ...context, changes: [change], omitted: Array.from({ length: 60 }, (_, i) => `head:other.ts:${i}-${i}`) }, model);
+    expect(prompts[1]).toContain("cents / 100");
+    expect(prompts[1]).not.toContain("unrelated()");
+    expect(prompts[1]).toContain("60 more omitted ranges");
+    expect(prompts[1]).not.toContain("other.ts:59-59");
+  });
+
+  it("keeps a judge decision whose audit lists no observations or counter-checks, and reports the judge pass before parsing", async () => {
+    const passes: string[] = [];
+    const { model } = provider([
+      { findings: [finding] },
+      { decisions: [{ candidateId: 1, verdict: "reject", reason: "The caller divides by 100.", audit: { observations: [], conclusion: "Pre-existing.", counterChecks: [], uncertainties: [] } }] },
+    ]);
+    const report = await review(context, model, { onPass: (pass) => void passes.push(pass.phase) });
+    expect(report.records[0]?.verdict).toBe("reject");
+    expect(passes).toEqual(["detector", "validator"]);
+    const bad = provider([{ findings: [{ ...finding, audit: { ...audit, counterChecks: [] } }] }]);
+    await expect(review(context, bad.model)).rejects.toThrow("Audit needs observations and counter-checks");
   });
 
   it("publishes accepted candidates and keeps rejected and uncertain decisions", async () => {

@@ -9,6 +9,31 @@ export function parseHunks(patch: string) {
   }));
 }
 
+/** The patch lines within `margin` head lines of one of `lines`, each run under a head-position header. */
+export function hunksNear(patch: string, lines: number[], margin = 40) {
+  const kept: string[] = [];
+  let position = 0;
+  let inHunk = false;
+  let open = false;
+  for (const line of patch.split("\n")) {
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) {
+      position = Number(hunk[1]);
+      inHunk = true;
+      open = false;
+      continue;
+    }
+    if (!inHunk || !line) continue;
+    if (lines.some((target) => Math.abs(target - position) <= margin)) {
+      if (!open) kept.push(`@@ head line ${position} @@`);
+      open = true;
+      kept.push(line);
+    } else open = false;
+    if (!line.startsWith("-")) position += 1;
+  }
+  return kept.join("\n");
+}
+
 /** Lines added on the head side, or the nearest surviving line for a deletion. */
 export function reviewLines(patch: string, lineCount: number) {
   const lines = new Set<number>();
