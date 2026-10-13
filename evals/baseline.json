@@ -479,23 +479,22 @@
     {
       "case": "othos-36-full-pr",
       "split": "holdout",
-      "agent": "codex+claude (severity at decision point, medium cap 6)",
+      "agent": "codex+claude (separate snippet budget, 240k batches, 4 passes)",
       "detectionMode": "file",
-      "recordedAt": "2026-10-12",
-      "source": "eval-1791831038246.json",
+      "recordedAt": "2026-10-13",
+      "source": "eval-1791902560138.json",
       "outcome": "found",
-      "candidates": 15,
-      "extraFindings": 7,
-      "costUsd": 0.98,
+      "candidates": 11,
+      "extraFindings": 8,
+      "costUsd": 0.89,
       "reference": {
         "reviewer": "Macroscope",
-        "found": 4,
+        "found": 3,
         "total": 12,
         "foundLines": [
           "apps/api/src/modules/workspaces/management-routes.ts:741 (also team-import.ts:55)",
-          "apps/api/src/modules/workspaces/analytics-routes.ts:2176 (at :1893)",
-          "apps/api/src/modules/workspaces/management-routes.ts:771 (at :772)",
-          "apps/api/src/modules/workspaces/alerts.ts:166 (at worker/alerts.ts:45)"
+          "apps/api/src/modules/workspaces/analytics-routes.ts:2176 (exact line)",
+          "apps/api/src/modules/workspaces/management-routes.ts:771 (at :772)"
         ],
         "byLevel": {
           "High": {
@@ -503,13 +502,13 @@
             "total": 4
           },
           "Medium": {
-            "found": 2,
+            "found": 1,
             "total": 8
           }
         },
         "deferred": 0
       },
-      "note": "Judge replayed from the 11 detector-only Codex passes in eval-1791827716912.json, three times with the severity definitions restated at the decision point (eval-1791830937354, -1791830988920, -1791831038246): identical verdicts, levels and ordering in all three, $0.97-0.98 each. Posted 3 highs (741, 772, team-import:55, the CSV variant Macroscope lists under 741) and 6 mediums; posted recall 4/12, High 2/4, Medium 2/8, nothing deferred that Macroscope flagged. The 'high extra' is team-import:55, a content hit outside the 10-line location window. Earlier replays with the definitions only in the detector rules rated the same findings medium. Missed Highs 371 and 1347 were never proposed by the detector."
+      "note": "Phase B check of the packing change (93a1bc1, 5df804a): 4 detector-only Codex passes (eval-1791850468382, one pass replayed after a usage limit) then one judge replay, $0.89. Judge accepted all 11 candidates; posted 3 highs + 6 mediums, deferred 2. Posted recall 3/12 (was 4/12 with 11 passes): lost alerts.ts:166, gained nothing. 8/12 comments were visible to the detector; 6 visible comments were missed, including both cross-file Highs 371 and 1347 whose sibling guard/filter sat in the same batch. Packing is no longer the bottleneck on this PR; the detector prompt is."
     }
   ]
 }
