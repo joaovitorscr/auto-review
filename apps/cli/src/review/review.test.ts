@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseArguments } from "../input.js";
-import { batchContext, hunksNear, packContext, parseHunks, reviewLines } from "./context.js";
+import { batchContext, hunksNear, packContext, pairingNotes, parseHunks, reviewLines } from "./context.js";
 import type { ReviewContext } from "./context.js";
 import { withReviewContext } from "./git.js";
 import { review, renderReview, validationContext } from "./run.js";
@@ -351,6 +351,28 @@ describe("counter-review", () => {
       "No supported",
     );
     expect(empty.prompts).toHaveLength(0);
+  });
+});
+
+describe("pairing notes", () => {
+  it("flags a call whose other sites nearly always sit next to a companion this site lacks", () => {
+    const sym = (id: string, name: string, file = "routes.ts") => ({ id, name, kind: "FunctionDeclaration", file, start: 0, end: 0, startLine: 1, endLine: 1 });
+    const call = (file: string, startLine: number, caller: string, target: string) => ({ file, start: 0, end: 0, startLine, endLine: startLine, expression: target, caller, target });
+    const index = {
+      files: ["routes.ts", "filters.ts"],
+      symbols: [sym("scope", "scopeFilter", "filters.ts"), sym("trust", "trustedFilter", "filters.ts"), sym("a", "a"), sym("b", "b"), sym("c", "c"), sym("d", "d")],
+      imports: [],
+      calls: [
+        call("routes.ts", 10, "a", "scope"), call("routes.ts", 11, "a", "trust"),
+        call("routes.ts", 30, "b", "scope"), call("routes.ts", 31, "b", "trust"),
+        call("routes.ts", 50, "c", "scope"), call("routes.ts", 51, "c", "trust"),
+        call("routes.ts", 70, "d", "scope"),
+      ],
+      diagnostics: [],
+    };
+    const change = { file: "routes.ts", status: "M", patch: "", hunks: [], reviewLines: [70] };
+    expect([...pairingNotes([change], index)]).toEqual([["routes.ts", ["line 70: scopeFilter without trustedFilter; 3 of its 3 other call sites pair them"]]]);
+    expect(pairingNotes([{ ...change, reviewLines: [50] }], index).size).toBe(0);
   });
 });
 
