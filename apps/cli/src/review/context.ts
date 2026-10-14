@@ -62,7 +62,46 @@ export type Change = {
   patch: string;
   hunks: ReturnType<typeof parseHunks>;
   reviewLines: number[];
+  /** Companion calls this change leaves out, see `pairingNotes`. */
+  notes?: string[];
 };
+
+/**
+ * Finds a call on a changed line whose other call sites in the repository almost always sit
+ * next to a second call that this site lacks (a scope filter nearly always paired with a trust
+ * filter, a parse nearly always followed by a validation). Only calls to repository symbols
+ * count, so builtins and libraries drop out. Statistical, so the note states the ratio and
+ * leaves the judgement to the reviewer.
+ */
+export function pairingNotes(changes: Change[], index: ReturnType<typeof indexProgram>) {
+  const byId = new Map(index.symbols.map((symbol) => [symbol.id, symbol]));
+  const calls = index.calls.filter((call) => call.caller && call.target && byId.has(call.target) && !/\.(test|spec)\./.test(call.file));
+  const sites = new Map<string, typeof calls>();
+  for (const call of calls) (sites.get(call.target!) ?? sites.set(call.target!, []).get(call.target!)!).push(call);
+  const near = (a: (typeof calls)[number], b: (typeof calls)[number]) =>
+    a.file === b.file && a.caller === b.caller && Math.abs(a.startLine - b.startLine) <= 3;
+  const notes = new Map<string, string[]>();
+  for (const change of changes) {
+    const changed = new Set(change.reviewLines);
+    for (const call of calls) {
+      if (call.file !== change.file || !changed.has(call.startLine)) continue;
+      const others = sites.get(call.target!)!.filter((other) => other !== call && !near(other, call));
+      if (others.length < 3) continue;
+      const companions = new Map<string, number>();
+      for (const other of others)
+        for (const target of new Set(calls.filter((candidate) => candidate.target !== call.target && near(other, candidate)).map((candidate) => candidate.target!)))
+          companions.set(target, (companions.get(target) ?? 0) + 1);
+      for (const [target, count] of companions) {
+        if (count / others.length < 0.6 || calls.some((candidate) => candidate.target === target && near(call, candidate))) continue;
+        const name = (id: string) => byId.get(id)!.name;
+        (notes.get(change.file) ?? notes.set(change.file, []).get(change.file)!).push(
+          `line ${call.startLine}: ${name(call.target!)} without ${name(target)}; ${count} of its ${others.length} other call sites pair them`,
+        );
+      }
+    }
+  }
+  return notes;
+}
 
 type Snippet = {
   file: string;
@@ -187,8 +226,10 @@ export function packContext(
       add(entry.target, "head", 1, 200, "dependency of changed file");
   }
   const reviewed = new Set(snippets.map((snippet) => snippet.file));
+  const notes = pairingNotes(input.changes, index);
   return {
     ...metadata,
+    changes: input.changes.map((change) => (notes.has(change.file) ? { ...change, notes: notes.get(change.file) } : change)),
     snippets,
     omitted: [...omitted],
     diagnostics: index.diagnostics.filter((diagnostic) => reviewed.has(diagnostic.file)),
