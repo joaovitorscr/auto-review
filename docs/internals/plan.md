@@ -19,6 +19,15 @@ where single-run variance decides the result.
 3. [ ] One effort check: Codex is hardcoded to low effort (`codex.ts:76`). Rerun acme-36's 4
    batches at high, 4 Codex passes, $0 Claude. Prediction: proposes 371 or 1347 without
    accusing a guarded sibling. If not, close cross-file work; if so, try focused context next.
+   Result (`eval-1792444810066.json`, `--effort high`, 3 of 4 passes before the Codex usage
+   limit, $0): **prediction failed**. Batch 0, which holds both server-side halves of 371 and
+   1347 with their guarded siblings, surveyed 360 ("finds members with historical usage",
+   risk none) and 820 ("includes historical contributors in dashboard member rows", risk none)
+   exactly as low effort did. 19 candidates; by proximity the same hits as low effort (741, 771,
+   2176, 5714/5705), no false accusation against a guarded sibling, and three more
+   management-routes findings near 741/771. Batch 3 (pass 4) holds neither comment, so the
+   missing pass cannot change the verdict. Cross-file Highs 371 and 1347 closed; effort stays
+   low by default.
 4. [ ] Relabel the Acme cases `dev`; take 2-3 unseen PRs as the real holdout before adopting
    any change.
 
