@@ -62,7 +62,7 @@ const surveySchema = {
     },
   },
 };
-/** Ordered strongest first; the published review posts critical and high, caps medium and only notes low. */
+/** Ordered strongest first; the published review posts critical and high first, then medium, and only notes low. */
 export const severities = ["critical", "high", "medium", "low"] as const;
 export type Severity = (typeof severities)[number];
 function severity(value: unknown): Severity {

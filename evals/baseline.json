@@ -1,6 +1,6 @@
 {
   "note": "Latest completed eval result per case, agent and detection mode. Regenerate from outputs/eval-*.json; compare experiments against these numbers. Reference = Macroscope comments found within 15 lines by an accepted finding.",
-  "generatedAt": "2026-10-12",
+  "generatedAt": "2026-10-19",
   "results": [
     {
       "case": "cents-conversion",
@@ -479,36 +479,39 @@
     {
       "case": "othos-36-full-pr",
       "split": "holdout",
-      "agent": "codex+claude (separate snippet budget, 240k batches, 4 passes)",
+      "agent": "codex (no judge, no medium cap, 4 passes)",
       "detectionMode": "file",
-      "recordedAt": "2026-10-13",
-      "source": "eval-1791902560138.json",
+      "recordedAt": "2026-10-19",
+      "source": "eval-1792442412430.json",
       "outcome": "found",
-      "candidates": 11,
-      "extraFindings": 8,
-      "costUsd": 0.89,
+      "candidates": 13,
+      "extraFindings": 7,
+      "costUsd": 0,
       "reference": {
         "reviewer": "Macroscope",
-        "found": 3,
+        "found": 6,
         "total": 12,
         "foundLines": [
-          "apps/api/src/modules/workspaces/management-routes.ts:741 (also team-import.ts:55)",
+          "apps/web/src/components/workspace/workspace-pages.tsx:5705 (at :5714)",
+          "apps/api/src/modules/workspaces/alerts.ts:166 (at :160)",
+          "apps/web/src/components/workspace/workspace-pages.tsx:5714 (exact line)",
+          "apps/api/src/modules/workspaces/management-routes.ts:741 (also team-import.ts:54)",
           "apps/api/src/modules/workspaces/analytics-routes.ts:2176 (exact line)",
           "apps/api/src/modules/workspaces/management-routes.ts:771 (at :772)"
         ],
         "byLevel": {
+          "Medium": {
+            "found": 4,
+            "total": 8
+          },
           "High": {
             "found": 2,
             "total": 4
-          },
-          "Medium": {
-            "found": 1,
-            "total": 8
           }
         },
         "deferred": 0
       },
-      "note": "Phase B check of the packing change (93a1bc1, 5df804a): 4 detector-only Codex passes (eval-1791850468382, one pass replayed after a usage limit) then one judge replay, $0.89. Judge accepted all 11 candidates; posted 3 highs + 6 mediums, deferred 2. Posted recall 3/12 (was 4/12 with 11 passes): lost alerts.ts:166, gained nothing. 8/12 comments were visible to the detector; 6 visible comments were missed, including both cross-file Highs 371 and 1347 whose sibling guard/filter sat in the same batch. Packing is no longer the bottleneck on this PR; the detector prompt is."
+      "note": "Replay of the 4 Codex passes in eval-1791994005172 (sibling instruction and pairing notes) with no judge and no medium cap, $0. Posted 4 highs + 9 mediums, 6/12 by reference; the cap of 6 mediums had held back the one finding at workspace-pages.tsx:5714 (stale caches after team mutations), which sits within 15 lines of both 5705 and 5714. 371 and 1347 still not proposed."
     }
   ]
 }

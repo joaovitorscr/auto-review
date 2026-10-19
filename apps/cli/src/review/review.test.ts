@@ -195,7 +195,7 @@ describe("counter-review", () => {
     expect(report.contextHash).toMatch(/^[a-f0-9]{64}$/);
     expect(renderReview(report)).toContain("amount.ts:2");
   });
-  it("posts every high, caps mediums, notes lows, and lets the judge set the level", async () => {
+  it("posts highs first, then every medium under its own heading, notes lows, and lets the judge set the level", async () => {
     const mediums = Array.from({ length: 7 }, (_, i) => ({ ...finding, title: `Medium ${i + 1}`, severity: "medium", confidence: 0.9 - i / 100 }));
     const low = { ...finding, title: "Hardening", severity: "medium" };
     const level = (index: number) => (index === 0 ? "critical" : index === 8 ? "low" : "medium");
@@ -204,12 +204,13 @@ describe("counter-review", () => {
       { decisions: Array.from({ length: 9 }, (_, i) => ({ candidateId: i + 1, verdict: "accept", severity: level(i), reason: "Reachable.", audit })) },
     ]);
     const report = await review(context, model, { validator: model });
-    expect(report.findings.map((entry) => entry.severity)).toEqual(["critical", ...Array.from({ length: 6 }, () => "medium")]);
-    expect(report.deferred.map((entry) => entry.title)).toEqual(["Medium 7", "Hardening"]);
+    expect(report.findings.map((entry) => entry.severity)).toEqual(["critical", ...Array.from({ length: 7 }, () => "medium")]);
+    expect(report.deferred.map((entry) => entry.title)).toEqual(["Hardening"]);
     expect(report.records[8]?.finding.severity).toBe("low");
     const rendered = renderReview(report);
     expect(rendered).toContain("## critical: Convert cents");
-    expect(rendered).toContain("Also noted, not posted:\n\n- medium: Medium 7 (`amount.ts:2`)\n- low: Hardening (`amount.ts:2`)");
+    expect(rendered).toContain("## Also worth a look\n\n### medium: Medium 1");
+    expect(rendered).toContain("Also noted, not posted:\n\n- low: Hardening (`amount.ts:2`)");
   });
   it("rejects invented citations, unchanged anchors and duplicates before validation, but not low confidence", async () => {
     const { model, prompts } = provider([

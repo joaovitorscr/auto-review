@@ -52,7 +52,7 @@ function parse(args: string[]) {
     else if (option === "--replay" && value) options.replay = value;
     else if (option !== "--")
       throw new Error(
-        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge that counter-reviews their candidates; without it findings are published at the detector's severity. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips any judge and counts reference comments against every candidate, uncapped.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts. Missing passes (a run cut short) are run live.",
+        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge that counter-reviews their candidates; without it findings are published at the detector's severity. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips any judge and counts reference comments against every candidate, including lows and ones the citation check withheld.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts. Missing passes (a run cut short) are run live.",
       );
     else index -= 1;
   }
@@ -238,7 +238,7 @@ async function main() {
           const overlap = label.reference?.comments.map((comment) => ({
             ...comment,
             found: near(comment, pool),
-            // Accepted but held back by the severity cap, so the cap's cost stays visible.
+            // Accepted but rated low, so it is only noted; keeps that cost visible.
             deferred: !near(comment, pool) && near(comment, report.deferred),
           }));
           // Recall per reference severity, so a missed High stands out from a missed Medium.
