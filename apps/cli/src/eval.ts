@@ -35,7 +35,7 @@ type Label = {
 );
 
 function parse(args: string[]) {
-  const options = { agents: [] as string[], split: "dev", only: "", replay: "", note: "", scoped: false, dryRun: false, detectorOnly: false, contextRecall: false, maxParts: 4 };
+  const options = { agents: [] as string[], split: "dev", only: "", replay: "", note: "", effort: "low" as "low" | "medium" | "high" | "xhigh", scoped: false, dryRun: false, detectorOnly: false, contextRecall: false, maxParts: 4 };
   for (let index = 0; index < args.length; index += 1) {
     const [option, value] = [args[index], args[index + 1] ?? ""];
     const flags = { "--scoped": "scoped", "--dry-run": "dryRun", "--detector-only": "detectorOnly", "--context-recall": "contextRecall" } as const;
@@ -52,9 +52,10 @@ function parse(args: string[]) {
     else if (option === "--case" && value) options.only = value;
     else if (option === "--replay" && value) options.replay = value;
     else if (option === "--note" && value) options.note = value;
+    else if (option === "--effort" && (["low", "medium", "high", "xhigh"] as const).includes(value as "low")) options.effort = value as typeof options.effort;
     else if (option !== "--")
       throw new Error(
-        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json] [--note text]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge that counter-reviews their candidates; without it findings are published at the detector's severity. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips any judge and counts reference comments against every candidate, including lows and ones the citation check withheld.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts. Missing passes (a run cut short) are run live.\n--note labels the run in evals/progress.db, e.g. \"codex high effort\".",
+        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json] [--note text] [--effort low|medium|high|xhigh]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge that counter-reviews their candidates; without it findings are published at the detector's severity. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips any judge and counts reference comments against every candidate, including lows and ones the citation check withheld.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts. Missing passes (a run cut short) are run live.\n--note labels the run in evals/progress.db, e.g. \"codex high effort\".\n--effort sets Codex reasoning effort for every pass (default low).",
       );
     else index -= 1;
   }
@@ -216,7 +217,7 @@ async function main() {
           const report = await withReviewContext(
             { repository, base: revisions.base, head: revisions.head },
             (context, checkout, sources) =>
-              review(context, replayed ? replayProvider(replayed, spec.detectors.map((detector) => agents[detector]({ checkout }))) : spec.detectors.map((detector) => agents[detector]({ checkout })), {
+              review(context, replayed ? replayProvider(replayed, spec.detectors.map((detector) => agents[detector]({ checkout, effort: options.effort }))) : spec.detectors.map((detector) => agents[detector]({ checkout, effort: options.effort })), {
                 checkout,
                 scopedSources: options.scoped ? sources : undefined,
                 maxParts: options.maxParts,
@@ -265,6 +266,7 @@ async function main() {
             expected: label.kind,
             agent,
             commit,
+            effort: options.effort,
             note: options.note || undefined,
             replay: options.replay ? basename(options.replay, ".json") : undefined,
             // A suggestion for the human reviewer: matching location is not proof the finding is right.
