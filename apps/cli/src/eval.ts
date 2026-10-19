@@ -147,12 +147,14 @@ async function main() {
           async (context) => {
             // File-mode batches only; scoped batches carry their own excerpt shape.
             const batches = batchContext(context);
+            // Visible when one batch shows every line of the range, from its snippets or its patches.
             const inBatch = (file: string, lines: [number, number]) =>
-              batches.some(
-                (batch) =>
-                  batch.snippets.some((snippet) => snippet.revision === "head" && snippet.file === file && snippet.startLine <= lines[0] && snippet.endLine >= lines[1]) ||
-                  batch.changes.some((change) => change.file === file && change.hunks.some((hunk) => hunk.newStart <= lines[0] && hunk.newStart + hunk.newLines - 1 >= lines[1])),
-              );
+              batches.some((batch) => {
+                const shown = (line: number) =>
+                  batch.snippets.some((snippet) => snippet.revision === "head" && snippet.file === file && snippet.startLine <= line && snippet.endLine >= line) ||
+                  batch.changes.some((change) => change.file === file && change.hunks.some((hunk) => hunk.newStart <= line && hunk.newStart + hunk.newLines - 1 >= line));
+                return Array.from({ length: lines[1] - lines[0] + 1 }, (_, offset) => lines[0] + offset).every(shown);
+              });
             // Why a range is missing: the file was never indexed, the range was retrieved but dropped by
             // the budget, or no retrieval rule reached it at all.
             const omittedRanges = context.omitted.flatMap((entry) => {
