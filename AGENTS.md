@@ -37,7 +37,7 @@ Run development commands from the repository root so it can leverage vite plus
 ## Plans and work artifacts
 
 - Do not commit implementation plans, research notes, or agent scratch files. Keep temporary working material outside the worktree. .plans/ is gitignored only as a safety net for legacy tooling.
-- Put durable architecture, constraints, and decisions in docs/.internals/. Update those docs when the product changes so agents find current facts instead of abandoned intentions.
+- Put durable architecture, constraints, and decisions in docs/internals/. Update those docs when the product changes so agents find current facts instead of abandoned intentions.
 - A merged PR is the implementation record. Close or update its tracking item when the work lands; do not preserve a second checklist in the repository.
 
 ## Where code lives
