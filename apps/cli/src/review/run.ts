@@ -263,12 +263,11 @@ export async function review(
       keptBy.push(record.agent);
     }
   }
-  // The posted review leads with the big bugs: every critical and high, the strongest mediums,
-  // and lows only as a note. The rest stay accepted in `deferred` for the full report.
-  const mediumCap = 6;
-  let mediums = 0;
-  const findings = kept.filter((finding) => finding.severity === "critical" || finding.severity === "high" || (finding.severity === "medium" && mediums++ < mediumCap));
-  const deferred = kept.filter((finding) => !findings.includes(finding));
+  // The posted review leads with the big bugs, then every medium; lows stay accepted in
+  // `deferred` and are only noted. Confidence is near 1 on almost every candidate, so a medium
+  // cap ordered by it dropped real bugs about as often as noise.
+  const findings = kept.filter((finding) => finding.severity !== "low");
+  const deferred = kept.filter((finding) => finding.severity === "low");
   return { ...metadata, findings, deferred };
 }
 
@@ -285,9 +284,11 @@ export function renderReview(report: Awaited<ReturnType<typeof review>>) {
     lines.push("No supported TypeScript or JavaScript changes to review.");
   else if (!report.findings.length)
     lines.push("No validated findings. This does not establish that the change is bug-free.");
+  const mediums = report.findings.filter((finding) => finding.severity === "medium");
   for (const finding of report.findings) {
+    if (finding === mediums[0] && mediums.length < report.findings.length) lines.push("## Also worth a look", "");
     lines.push(
-      `## ${finding.severity}: ${finding.title}`,
+      `${finding.severity === "medium" ? "###" : "##"} ${finding.severity}: ${finding.title}`,
       "",
       `\`${finding.file}:${finding.line}\``,
       "",
