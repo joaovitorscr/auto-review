@@ -117,7 +117,7 @@ describe("counter-review", () => {
       { findings: [finding] },
       { decisions: [{ candidateId: 1, verdict: "needs_more_context", reason: "Identity unresolved", audit }] },
     ]);
-    await review(input, model);
+    await review(input, model, { validator: model });
     expect(prompts[1]).toContain(independent.text);
     expect(prompts[1]).toContain("judge the action against that selection");
     const budget = JSON.stringify(independent).length + 1;
@@ -134,7 +134,7 @@ describe("counter-review", () => {
       { findings: [finding] },
       { decisions: [{ candidateId: 1, verdict: "accept", reason: "Confirmed", audit }] },
     ]);
-    await review({ ...context, changes: [change], omitted: Array.from({ length: 60 }, (_, i) => `head:other.ts:${i}-${i}`) }, model);
+    await review({ ...context, changes: [change], omitted: Array.from({ length: 60 }, (_, i) => `head:other.ts:${i}-${i}`) }, model, { validator: model });
     expect(prompts[1]).toContain("cents / 100");
     expect(prompts[1]).not.toContain("unrelated()");
     expect(prompts[1]).toContain("60 more omitted ranges");
@@ -147,7 +147,7 @@ describe("counter-review", () => {
       { findings: [finding] },
       { decisions: [{ candidateId: 1, verdict: "reject", reason: "The caller divides by 100.", audit: { observations: [], conclusion: "Pre-existing.", counterChecks: [], uncertainties: [] } }] },
     ]);
-    const report = await review(context, model, { onPass: (pass) => void passes.push(pass.phase) });
+    const report = await review(context, model, { validator: model, onPass: (pass) => void passes.push(pass.phase) });
     expect(report.records[0]?.verdict).toBe("reject");
     expect(passes).toEqual(["detector", "validator"]);
     const bad = provider([{ findings: [{ ...finding, audit: { ...audit, counterChecks: [] } }] }]);
@@ -181,7 +181,7 @@ describe("counter-review", () => {
         ],
       },
     ]);
-    const report = await review(context, model);
+    const report = await review(context, model, { validator: model });
     expect(report.findings).toEqual([finding]);
     expect(report.records[0]?.validatorAudit).toEqual(audit);
     expect(report.records[1]?.validatorAudit).toEqual(audit);
@@ -203,7 +203,7 @@ describe("counter-review", () => {
       { findings: [finding, ...mediums, low] },
       { decisions: Array.from({ length: 9 }, (_, i) => ({ candidateId: i + 1, verdict: "accept", severity: level(i), reason: "Reachable.", audit })) },
     ]);
-    const report = await review(context, model);
+    const report = await review(context, model, { validator: model });
     expect(report.findings.map((entry) => entry.severity)).toEqual(["critical", ...Array.from({ length: 6 }, () => "medium")]);
     expect(report.deferred.map((entry) => entry.title)).toEqual(["Medium 7", "Hardening"]);
     expect(report.records[8]?.finding.severity).toBe("low");
@@ -233,7 +233,7 @@ describe("counter-review", () => {
         ],
       },
     ]);
-    const report = await review(context, model);
+    const report = await review(context, model, { validator: model });
     expect(report.findings).toHaveLength(1);
     expect(report.records.filter((record) => record.verdict === "reject")).toHaveLength(4);
     // The judge, not the detector's self-rating, decides low-confidence candidates.
@@ -258,15 +258,13 @@ describe("counter-review", () => {
     const bare = provider([{ findings: [] }]);
     expect((await review(context, bare.model)).passes[0]?.survey).toEqual([]);
   });
-  it("records eligible candidates as unjudged when the counter-review is skipped", async () => {
+  it("publishes cited candidates at the detector's severity when no validator is given", async () => {
     const { model, prompts } = provider([{ findings: [finding, { ...finding, line: 1 }] }]);
-    const report = await review(context, model, { judge: false });
+    const report = await review(context, model);
     expect(prompts).toHaveLength(1);
-    expect(report.findings).toEqual([]);
-    expect(report.records.map(({ verdict, reason }) => [verdict, reason])).toEqual([
-      ["needs_more_context", "Counter-review skipped."],
-      ["reject", expect.any(String)],
-    ]);
+    expect(report.findings).toEqual([finding]);
+    expect(report.records.map(({ verdict }) => verdict)).toEqual(["accept", "reject"]);
+    expect(report.passes.map(({ phase }) => phase)).toEqual(["detector"]);
   });
   it("runs every detector on each batch and judges their candidates together", async () => {
     const first = provider([{ findings: [finding] }]);
@@ -289,13 +287,12 @@ describe("counter-review", () => {
   it("collapses accepted findings within three lines from different detectors, but keeps one detector's neighbours", async () => {
     const twoLines = { ...context, changes: [{ ...context.changes[0]!, reviewLines: [2, 3] }] };
     const weaker = { ...finding, title: "Same bug, other line", line: 3, severity: "medium" };
-    const accept = (count: number) => ({ decisions: Array.from({ length: count }, (_, i) => ({ candidateId: i + 1, verdict: "accept", audit, reason: "Reachable." })) });
-    const a = provider([{ findings: [weaker] }, accept(2)]);
+    const a = provider([{ findings: [weaker] }]);
     const b = provider([{ findings: [finding] }]);
     const report = await review(twoLines, [{ ...a.model, name: "a" }, { ...b.model, name: "b" }]);
     expect(report.findings).toEqual([finding]);
     expect(report.records[0]).toMatchObject({ agent: "a", verdict: "reject", reason: "Duplicate of an accepted finding." });
-    const single = provider([{ findings: [weaker, finding] }, accept(2)]);
+    const single = provider([{ findings: [weaker, finding] }]);
     expect((await review(twoLines, single.model)).findings).toHaveLength(2);
   });
   it("accepts head evidence the agent read from the checkout and rejects ranges that do not exist", async () => {
@@ -315,7 +312,7 @@ describe("counter-review", () => {
           ],
         },
       ]);
-      const report = await review(context, model, { checkout });
+      const report = await review(context, model, { checkout, validator: model });
       expect(report.findings.map((entry) => entry.title)).toEqual(["Cites schema.ts:1"]);
       expect(report.retrieved).toEqual([
         { file: "schema.ts", startLine: 1, endLine: 1, text: "export const unit = 'dollars';" },
@@ -329,18 +326,13 @@ describe("counter-review", () => {
     await expect(
       review(context, provider([{ findings: [{ ...finding, confidence: "high" }] }]).model),
     ).rejects.toThrow("confidence");
-    await expect(
-      review(context, provider([{ findings: [finding] }, { decisions: [] }]).model),
-    ).rejects.toThrow("exactly one");
-    await expect(
-      review(
-        context,
-        provider([
-          { findings: [finding] },
-          { decisions: [{ candidateId: 2, verdict: "accept", audit, reason: "Wrong ID" }] },
-        ]).model,
-      ),
-    ).rejects.toThrow("exactly one");
+    const empty = provider([{ findings: [finding] }, { decisions: [] }]).model;
+    await expect(review(context, empty, { validator: empty })).rejects.toThrow("exactly one");
+    const wrongId = provider([
+      { findings: [finding] },
+      { decisions: [{ candidateId: 2, verdict: "accept", audit, reason: "Wrong ID" }] },
+    ]).model;
+    await expect(review(context, wrongId, { validator: wrongId })).rejects.toThrow("exactly one");
   });
   it("skips validation with no findings, and skips the agent entirely with no supported changes", async () => {
     const negative = provider([{ findings: [] }]);
@@ -494,17 +486,9 @@ it("fails rather than inventing missing audits or accepting nonexistent audit ev
   await expect(
     review(context, provider([{ findings: [{ ...finding, audit: invalidAudit }] }]).model),
   ).rejects.toThrow("nonexistent evidence");
-  await expect(
-    review(
-      context,
-      provider([
-        { findings: [finding] },
-        {
-          decisions: [
-            { candidateId: 1, verdict: "accept", reason: "Accepted", audit: invalidAudit },
-          ],
-        },
-      ]).model,
-    ),
-  ).rejects.toThrow("nonexistent evidence");
+  const judged = provider([
+    { findings: [finding] },
+    { decisions: [{ candidateId: 1, verdict: "accept", reason: "Accepted", audit: invalidAudit }] },
+  ]).model;
+  await expect(review(context, judged, { validator: judged })).rejects.toThrow("nonexistent evidence");
 });
