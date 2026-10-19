@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseAgentSpec } from "./agent-spec.js";
 import type { AgentName } from "./agent-spec.js";
@@ -12,6 +12,7 @@ import { codexProvider } from "./review/codex.js";
 import { batchContext } from "./review/context.js";
 import { withReviewContext } from "./review/git.js";
 import { prepareDetection, review } from "./review/run.js";
+import { currentCommit, openProgress, recordOutput } from "./progress.js";
 
 const WORKSPACE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 // evals/ cases are committed and inline; corpus/cases/ point at local clones and stay git-ignored.
@@ -34,7 +35,7 @@ type Label = {
 );
 
 function parse(args: string[]) {
-  const options = { agents: [] as string[], split: "dev", only: "", replay: "", scoped: false, dryRun: false, detectorOnly: false, contextRecall: false, maxParts: 4 };
+  const options = { agents: [] as string[], split: "dev", only: "", replay: "", note: "", scoped: false, dryRun: false, detectorOnly: false, contextRecall: false, maxParts: 4 };
   for (let index = 0; index < args.length; index += 1) {
     const [option, value] = [args[index], args[index + 1] ?? ""];
     const flags = { "--scoped": "scoped", "--dry-run": "dryRun", "--detector-only": "detectorOnly", "--context-recall": "contextRecall" } as const;
@@ -50,9 +51,10 @@ function parse(args: string[]) {
       options.split = value;
     else if (option === "--case" && value) options.only = value;
     else if (option === "--replay" && value) options.replay = value;
+    else if (option === "--note" && value) options.note = value;
     else if (option !== "--")
       throw new Error(
-        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge that counter-reviews their candidates; without it findings are published at the detector's severity. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips any judge and counts reference comments against every candidate, including lows and ones the citation check withheld.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts. Missing passes (a run cut short) are run live.",
+        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json] [--note text]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge that counter-reviews their candidates; without it findings are published at the detector's severity. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips any judge and counts reference comments against every candidate, including lows and ones the citation check withheld.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts. Missing passes (a run cut short) are run live.\n--note labels the run in evals/progress.db, e.g. \"codex high effort\".",
       );
     else index -= 1;
   }
@@ -131,6 +133,7 @@ async function main() {
   }
   cases.sort((a, b) => a.name.localeCompare(b.name));
   const results = [];
+  const commit = currentCommit();
   for (const { name, directory } of cases) {
     const label: Label = JSON.parse(await readFile(join(directory, "case.json"), "utf8"));
     if (options.split !== "all" && label.split !== options.split) continue;
@@ -147,14 +150,14 @@ async function main() {
           async (context) => {
             // File-mode batches only; scoped batches carry their own excerpt shape.
             const batches = batchContext(context);
-            // Visible when one batch shows every line of the range, from its snippets or its patches.
-            const inBatch = (file: string, lines: [number, number]) =>
-              batches.some((batch) => {
-                const shown = (line: number) =>
-                  batch.snippets.some((snippet) => snippet.revision === "head" && snippet.file === file && snippet.startLine <= line && snippet.endLine >= line) ||
-                  batch.changes.some((change) => change.file === file && change.hunks.some((hunk) => hunk.newStart <= line && hunk.newStart + hunk.newLines - 1 >= line));
-                return Array.from({ length: lines[1] - lines[0] + 1 }, (_, offset) => lines[0] + offset).every(shown);
-              });
+            // A batch shows a range when its snippets or patches cover every line of it.
+            const shows = (batch: (typeof batches)[number], file: string, lines: [number, number]) => {
+              const shown = (line: number) =>
+                batch.snippets.some((snippet) => snippet.revision === "head" && snippet.file === file && snippet.startLine <= line && snippet.endLine >= line) ||
+                batch.changes.some((change) => change.file === file && change.hunks.some((hunk) => hunk.newStart <= line && hunk.newStart + hunk.newLines - 1 >= line));
+              return Array.from({ length: lines[1] - lines[0] + 1 }, (_, offset) => lines[0] + offset).every(shown);
+            };
+            const inBatch = (file: string, lines: [number, number]) => batches.some((batch) => shows(batch, file, lines));
             // Why a range is missing: the file was never indexed, the range was retrieved but dropped by
             // the budget, or no retrieval rule reached it at all.
             const omittedRanges = context.omitted.flatMap((entry) => {
@@ -175,14 +178,16 @@ async function main() {
               const anchors = [comment, ...(comment.anchors ?? [])].map(around);
               const needs = comment.needs ?? (anchors.some((need) => inBatch(need.file, need.lines)) ? [] : [anchors[0]!]);
               const missing = needs.filter((need) => !inBatch(need.file, need.lines)).map((need) => ({ ...need, reason: reason(need.file, need.lines) }));
-              return { file: comment.file, line: comment.line, severity: comment.severity, visible: missing.length === 0, missing };
+              // Every range seen, but not in one pass: the detector never holds both halves of a cross-file bug at once.
+              const split = !missing.length && !batches.some((batch) => needs.every((need) => shows(batch, need.file, need.lines)));
+              return { file: comment.file, line: comment.line, severity: comment.severity, visible: !missing.length && !split, split, missing };
             });
           },
         );
         const visible = recall.filter((comment) => comment.visible).length;
         process.stdout.write(`${name}: ${visible}/${recall.length} comments fully visible to the detector\n`);
         for (const comment of recall.filter((entry) => !entry.visible))
-          process.stdout.write(`  ${comment.severity} ${comment.file}:${comment.line} missing ${comment.missing.map((need) => `${need.file}:${need.lines[0]}-${need.lines[1]} (${need.reason})`).join(", ")}\n`);
+          process.stdout.write(`  ${comment.severity} ${comment.file}:${comment.line} ${comment.split ? "needs ranges split across batches" : `missing ${comment.missing.map((need) => `${need.file}:${need.lines[0]}-${need.lines[1]} (${need.reason})`).join(", ")}`}\n`);
         continue;
       }
       if (options.dryRun) {
@@ -259,6 +264,9 @@ async function main() {
             split: label.split,
             expected: label.kind,
             agent,
+            commit,
+            note: options.note || undefined,
+            replay: options.replay ? basename(options.replay, ".json") : undefined,
             // A suggestion for the human reviewer: matching location is not proof the finding is right.
             reference: overlap && {
               reviewer: label.reference!.reviewer,
@@ -322,6 +330,8 @@ async function main() {
             split: label.split,
             expected: label.kind,
             agent,
+            commit,
+            note: options.note || undefined,
             outcome: "error",
             error: error instanceof Error ? error.message : String(error),
             passes: completed,
@@ -337,6 +347,7 @@ async function main() {
   const destination = join(WORKSPACE_ROOT, "outputs", `eval-${Date.now()}.json`);
   await mkdir(dirname(destination), { recursive: true });
   await writeFile(destination, `${JSON.stringify(results, null, 2)}\n`, "utf8");
+  await recordOutput(openProgress(), destination);
   const rows = results.map(
     (result) =>
       `| ${result.case} | ${result.split} | ${result.expected} | ${result.agent} | ${result.outcome} | ${"candidates" in result ? result.candidates : "-"} | ${"extrasByLevel" in result && result.extrasByLevel ? `${result.extraFindings}${(result.extrasByLevel.high ?? 0) + (result.extrasByLevel.critical ?? 0) ? ` (${(result.extrasByLevel.high ?? 0) + (result.extrasByLevel.critical ?? 0)} high+)` : ""}` : "-"} | ${(result.durationMs / 1000).toFixed(0)}s | ${"costUsd" in result && result.costUsd !== undefined ? `$${result.costUsd.toFixed(2)}` : "-"} | ${"reference" in result && result.reference ? `${result.reference.found}/${result.reference.total} of ${result.reference.reviewer}${Object.entries(result.reference.byLevel ?? {}).map(([level, count]) => `, ${level} ${count.found}/${count.total}`).join("")}${result.reference.deferred ? `, ${result.reference.deferred} deferred` : ""}` : "-"} |`,
