@@ -29,7 +29,7 @@ Commit the changes you want reviewed, then run:
 pnpm pr review --base main
 ```
 
-AutoReview checks out the merge base and HEAD into temporary Git worktrees, so your checkout is never modified. It collects the changed code plus AST-linked callers, callees, and imports, then runs a detector pass and a separate counter-review pass through your coding agent. Use `--agent claude` for Claude Code; Codex is the default. Findings whose citations do not match the collected source are withheld.
+AutoReview checks out the merge base and HEAD into temporary Git worktrees, so your checkout is never modified. It collects the changed code plus AST-linked callers, callees, and imports, then runs detector passes through your coding agent. Use `--agent claude` for Claude Code; Codex is the default. Findings whose citations do not match the collected source are withheld.
 
 The terminal shows accepted findings. A JSON report is saved under `outputs/` (or `--output path`) with the revisions, context, accepted and withheld candidates, and coverage limits. Its `status` is `complete`, `partial` (some changed code, config, or context was not reviewed; docs and lockfiles do not count), `failed`, or `cancelled`. Ctrl-C stops the agent and removes the temporary checkouts. Staged, unstaged, and untracked changes are excluded.
 
