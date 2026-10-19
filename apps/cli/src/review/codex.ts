@@ -38,6 +38,8 @@ async function disableMcpServers(executable: string) {
 export function codexProvider(options: {
   checkout: string;
   model?: string;
+  // Reasoning effort for every pass; low unless an eval asks for more.
+  effort?: "low" | "medium" | "high" | "xhigh";
   executable?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -73,7 +75,7 @@ export function codexProvider(options: {
           "--output-last-message",
           output,
         ];
-        args.push("--model", options.model ?? "gpt-6-astra", "-c", "model_reasoning_effort=low");
+        args.push("--model", options.model ?? "gpt-6-astra", "-c", `model_reasoning_effort=${options.effort ?? "low"}`);
         args.push("-");
         await runAgent({
           name: "Codex",
