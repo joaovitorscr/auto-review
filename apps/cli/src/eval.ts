@@ -52,7 +52,7 @@ function parse(args: string[]) {
     else if (option === "--replay" && value) options.replay = value;
     else if (option !== "--")
       throw new Error(
-        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge; without it the first detector judges. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips the judge and counts reference comments against every candidate.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts. Missing passes (a run cut short) are run live.",
+        "Usage: eval [--agent detectors[+judge]]... [--split dev|holdout|all] [--case name] [--scoped] [--detector-only] [--context-recall] [--dry-run] [--max-parts N] [--replay output.json]\nRuns the labeled cases in evals/ with each agent spec (default: codex and claude, dev split).\nA spec lists comma-separated detectors (codex, claude; repeats allowed) that all run on every part, and an optional +judge that counter-reviews their candidates; without it findings are published at the detector's severity. Examples: codex, codex+claude, codex,claude+claude.\n--detector-only skips any judge and counts reference comments against every candidate, uncapped.\n--context-recall runs no model: it checks whether the head ranges each reference comment needs (its `needs`, else its own line) appear in a detector batch.\n--replay feeds the detector passes saved in an earlier eval output to the judge instead of running detectors; use the same case and --max-parts. Missing passes (a run cut short) are run live.",
       );
     else index -= 1;
   }
@@ -193,7 +193,7 @@ async function main() {
         );
         for (const agent of options.agents) {
           const spec = parseAgentSpec(agent)!;
-          const passes = { agent, detectorPasses: summary.batches * spec.detectors.length, validatorPasses: options.detectorOnly ? 0 : "0 or 1" };
+          const passes = { agent, detectorPasses: summary.batches * spec.detectors.length, validatorPasses: options.detectorOnly || !spec.judge ? 0 : "0 or 1" };
           process.stdout.write(`${JSON.stringify({ ...passes, ...summary }, null, 2)}\n`);
         }
         continue;
@@ -213,8 +213,7 @@ async function main() {
                 checkout,
                 scopedSources: options.scoped ? sources : undefined,
                 maxParts: options.maxParts,
-                validator: agents[spec.judge]({ checkout }),
-                judge: !options.detectorOnly,
+                validator: spec.judge && !options.detectorOnly ? agents[spec.judge]({ checkout }) : undefined,
                 onPass: ({ phase, agent, durationMs, model, turns, usage, survey, candidates }) =>
                   completed.push({ phase, agent, durationMs, model, turns, usage, survey, candidates }),
               }),

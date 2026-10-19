@@ -85,10 +85,10 @@ export function validationContext(context: ReviewContext, maxCharacters = 80_000
 }
 
 /**
- * Runs the detector and counter-review passes.
- * Every detector runs on every batch and their candidates are judged together; the first detector
- * also judges unless `validator` is given. `judge: false` stops after detection and records every
- * eligible candidate as needs_more_context, so evals can measure what the detectors proposed.
+ * Runs the detector passes and, when `validator` is given, a counter-review of their candidates.
+ * Every detector runs on every batch. Without a validator, every candidate that passes the citation
+ * check is accepted at the detector's severity: on the eval corpus the judge accepted every candidate
+ * and kept the detector's level on nearly all of them, at a Claude pass per PR.
  * With `checkout`, head citations outside the supplied snippets are checked against that directory.
  */
 export async function review(
@@ -98,9 +98,8 @@ export async function review(
     onProgress?: (message: string) => void;
     checkout?: string;
     maxParts?: number;
-    // Runs the counter-review with a different provider than the first detector.
+    // Runs the counter-review; omitted, detector findings are published as proposed.
     validator?: ModelProvider;
-    judge?: boolean;
     scopedSources?: ScopeSources;
     // Called after each completed pass, so a later failure does not lose paid work.
     onPass?: (pass: { phase: string; agent?: string; survey?: ReturnType<typeof parseSurvey>; candidates: Finding[] } & Omit<ModelResponse, "output">) => void;
@@ -208,9 +207,9 @@ export async function review(
     if (reason) records.push({ ...candidate, verdict: "reject", reason });
     else eligible.push(candidate);
   }
-  if (eligible.length && options.judge === false)
+  if (!options.validator)
     for (const candidate of eligible)
-      records.push({ ...candidate, verdict: "needs_more_context", reason: "Counter-review skipped." });
+      records.push({ ...candidate, verdict: "accept", reason: "Detector finding; no counter-review." });
   else if (eligible.length) {
     onProgress(`Trying to disprove ${eligible.length} candidate finding(s)...`);
     const candidateFiles = new Set(eligible.flatMap(({ finding }) => [finding.file, ...finding.evidence.map((entry) => entry.file)]));
@@ -218,7 +217,7 @@ export async function review(
       const files = "scopes" in batch ? batch.scopes.map((scope) => scope.file) : batch.changes.map((change) => change.file);
       return files.some((file) => candidateFiles.has(file)) ? files : [];
     });
-    const judge = options.validator ?? providers[0]!;
+    const judge = options.validator;
     const validation = await judge.complete({
       schema: validationSchema,
       prompt: `${rules}\n${judgeRules}\n\nYou are the independent counter-reviewer. Try to disprove every candidate. Check whether the bug already existed, whether guards or callers defeat the scenario, and whether evidence establishes each step. Accept only when the change introduces the claimed reachable regression. A request any authenticated client can send counts as reachable even when the bundled UI never sends it: new validation that lets malformed input crash with a 500 instead of a 4xx is a material bug. Reject incorrect claims. Use needs_more_context when you cannot establish or disprove the claim. Return exactly one decision per candidateId, and set severity from the defined levels, not from your sense of impact: a request the product can produce that ends in an unhandled database or server error is high, as is any write, notification or access decision reaching the wrong party; the candidate's own level is a proposal. Do not rewrite findings. Give a brief evidence-based reason, not private reasoning.\n\nCANDIDATES\n${JSON.stringify(eligible)}\n\nRETRIEVED HEAD SOURCE CITED BY CANDIDATES\n${JSON.stringify(retrieved)}\n\nDIFF OF CANDIDATE FILES NEAR THE CANDIDATES\n${JSON.stringify(candidateDiff(context, eligible))}\n\nINDEPENDENT CONTEXT FOR COUNTER-CHECKS\n${JSON.stringify(validationContext(context, 80_000, relatedFiles))}\n\nConsider this context even when candidates did not cite it. Base comparison leads are not proof of equivalence. Read head files when a check needs more; omitted context is not evidence of absent behavior.`,
