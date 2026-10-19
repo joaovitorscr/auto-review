@@ -397,9 +397,21 @@ describe("context budget", () => {
     expect(batch.readFirst).toEqual(["amount.ts"]);
   });
 
+  it("leaves out of own-file head snippets the lines the batch's patch already shows", () => {
+    const text = Array.from({ length: 8 }, (_, i) => `line${i + 1}`).join("\n");
+    const head = { ...context.snippets[0]!, startLine: 1, endLine: 8, text };
+    const base = { ...head, revision: "base" as const };
+    const [batch] = batchContext({ ...context, snippets: [head, base] });
+    expect(batch!.snippets.filter((snippet) => snippet.revision === "head").map(({ startLine, endLine, text }) => [startLine, endLine, text])).toEqual([
+      [4, 8, "line4\nline5\nline6\nline7\nline8"],
+    ]);
+    expect(batch!.snippets.find((snippet) => snippet.revision === "base")?.text).toBe(text);
+  });
+
   it("splits large contexts so each detector pass keeps its own changed files", () => {
     const changes = ["a.ts", "b.ts", "c.ts"].map((file) => ({ ...context.changes[0], file }));
-    const snippets = changes.map((change) => ({ ...context.snippets[0], file: change.file }));
+    // Lines past the hunk, so something survives trimming the lines the patch shows.
+    const snippets = changes.map((change) => ({ ...context.snippets[0], file: change.file, endLine: 5, text: `${context.snippets[0]!.text}\n\nexport {};` }));
     const batches = batchContext({ ...context, changes, snippets }, 1200);
     expect(batches.length).toBeGreaterThan(1);
     expect(batches.flatMap((batch) => batch.changes.map((change) => change.file))).toEqual(["a.ts", "b.ts", "c.ts"]);

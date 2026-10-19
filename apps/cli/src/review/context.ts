@@ -271,7 +271,25 @@ export function batchContext(context: ReviewContext, maxCharacters = 240_000) {
   }
   return groups.map((changes) => {
     const files = new Set(changes.map((change) => change.file));
-    const own = context.snippets.filter((snippet) => files.has(snippet.file));
+    // A batch's patches already show their hunks' head lines; own-file head snippets carry only the
+    // lines around them, which on big PRs frees a third of the snippet space. context.snippets keeps
+    // the full ranges for citation checks.
+    const own = context.snippets.filter((snippet) => files.has(snippet.file)).flatMap((snippet) => {
+      const hunks = snippet.revision === "head" ? changes.find((change) => change.file === snippet.file)!.hunks : [];
+      const lines = snippet.text.split("\n");
+      const pieces: Snippet[] = [];
+      let start: number | undefined;
+      for (let offset = 0; offset <= lines.length; offset += 1) {
+        const line = snippet.startLine + offset;
+        const shown = offset === lines.length || hunks.some((hunk) => line >= hunk.newStart && line < hunk.newStart + hunk.newLines);
+        if (!shown && start === undefined) start = offset;
+        if (shown && start !== undefined) {
+          pieces.push({ ...snippet, startLine: snippet.startLine + start, endLine: line - 1, text: lines.slice(start, offset).join("\n") });
+          start = undefined;
+        }
+      }
+      return pieces;
+    });
     const rest = context.snippets.filter((snippet) => !files.has(snippet.file));
     let remaining = maxCharacters - fixed - size(changes);
     const snippets: typeof context.snippets = [];
