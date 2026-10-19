@@ -9,7 +9,8 @@
     "dev": "vp -C apps/web dev",
     "pr": "vp run --filter @auto-review/cli start",
     "test": "vp test",
-    "eval": "vp run --filter @auto-review/cli eval"
+    "eval": "vp run --filter @auto-review/cli eval",
+    "progress": "vp run --filter @auto-review/cli progress"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
