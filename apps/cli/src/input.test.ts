@@ -19,6 +19,18 @@ describe("parseArguments", () => {
   });
 });
 
+describe("post arguments", () => {
+  it("reads the report, an optional pull request and the minimum severity", () => {
+    expect(parseArguments(["post", "report.json"])).toEqual({ command: "post", report: "report.json", target: undefined, minimum: "high", dryRun: false });
+    expect(parseArguments(["post", "report.json", "12", "--min", "medium", "--dry-run"])).toMatchObject({ target: "12", minimum: "medium", dryRun: true });
+  });
+
+  it("rejects a missing report and unknown severities", () => {
+    expect(() => parseArguments(["post"])).toThrow("saved review report");
+    expect(() => parseArguments(["post", "report.json", "--min", "low"])).toThrow("--min");
+  });
+});
+
 describe("repositoryName", () => {
   it("reads the owner and repository from a pull request URL", () => {
     expect(repositoryName("https://github.com/othos-io/othos-telemetry/pull/38")).toBe(
