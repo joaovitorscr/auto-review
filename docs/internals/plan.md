@@ -156,7 +156,11 @@ but 371 and 1347 are now closed as "needs a stronger model or a human". Next: Ph
   cap); `eval-1791994005172` posts 4/12 with 2 more hits held back by the medium cap. No code
   rule for hand-built requests: the detector already rates them low by the shared severity
   definitions, and the judge never moved a candidate on that ground. The detector prompt still
-  says a counter-reviewer filters its output; left as is until a paid run can measure a change.
+  says a counter-reviewer filters its output, on purpose. Measured 2026-10-20
+  (`eval-1792527010660`, 4 Codex passes, detector-only): telling the detector nothing filters
+  its output dropped othos-36 from 13 candidates and 6/12 location hits to 8 and 3/12, losing
+  5714 among others. The proposer framing buys recall; keep it until the posted volume on real
+  PRs says otherwise.
 - [x] Medium cap dropped (2026-10-19, developer decision): highs first, then every medium under
   one heading, lows noted. Confidence sat at 0.95-1.0 on nearly every candidate (hit mean 0.976,
   miss 0.964), so the cap cut at random: on saved runs it lost 5714 on othos-36 (4/12 → 6/12
