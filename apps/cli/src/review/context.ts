@@ -117,6 +117,8 @@ export function packContext(
   input: {
     base: string;
     head: string;
+    // True when head is a throwaway commit of uncommitted work, not a commit in the repository's history.
+    workingTreeSnapshot?: boolean;
     changes: Change[];
     index: ReturnType<typeof indexProgram>;
     before: ReadonlyMap<string, string>;

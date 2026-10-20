@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -13,26 +13,53 @@ const nonCode =
   /(^|\/)(LICENSE|CODEOWNERS|\.gitignore|\.gitattributes|\.DS_Store|[^/]+\.(md|mdx|txt|lock|png|jpe?g|gif|svg|ico|webp)|pnpm-lock\.yaml|package-lock\.json)$/i;
 // Schema and migration files have no AST here but decide what the code's inputs reach; they are reviewed as text.
 const textReviewed = /\.(sql|prisma|graphql|gql)$/i;
-const git = async (root: string, args: string[]) =>
-  (await exec("git", ["-C", root, ...args], { maxBuffer: 20 * 1024 * 1024 })).stdout;
+const git = async (root: string, args: string[], env?: NodeJS.ProcessEnv) =>
+  (await exec("git", ["-C", root, ...args], { maxBuffer: 20 * 1024 * 1024, env: env && { ...process.env, ...env } })).stdout;
 
-/** Builds context and runs the consumer against the same immutable head checkout. */
+/**
+ * Commits staged, unstaged and untracked (not ignored) files on top of HEAD through a copy of the
+ * index, so the caller's index, branch and files stay untouched. Returns undefined for a clean tree.
+ */
+async function snapshotWorkingTree(root: string, temporary: string) {
+  if (!(await git(root, ["--no-optional-locks", "status", "--porcelain", "--untracked-files=all"])).trim()) return undefined;
+  const index = join(temporary, "index");
+  // Copying the real index keeps its stat cache, so `add -A` only rehashes files that changed.
+  await copyFile(resolve(root, (await git(root, ["rev-parse", "--git-path", "index"])).trim()), index).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  });
+  const env = {
+    GIT_INDEX_FILE: index,
+    GIT_AUTHOR_NAME: "AutoReview",
+    GIT_AUTHOR_EMAIL: "auto-review@localhost",
+    GIT_COMMITTER_NAME: "AutoReview",
+    GIT_COMMITTER_EMAIL: "auto-review@localhost",
+  };
+  await git(root, ["add", "-A", "--", "."], env);
+  const tree = (await git(root, ["write-tree"], env)).trim();
+  return (await git(root, ["commit-tree", tree, "-p", "HEAD", "-m", "AutoReview working-tree snapshot"], env)).trim();
+}
+
+/**
+ * Builds context and runs the consumer against the same immutable head checkout. Without `head`,
+ * a dirty working tree is reviewed as a snapshot commit on top of HEAD.
+ */
 export async function withReviewContext<T>(
-  options: { repository: string; base: string; head: string; signal?: AbortSignal },
+  options: { repository: string; base: string; head?: string; signal?: AbortSignal },
   consume: (context: ReviewContext, checkout: string, sources: { before: ReadonlyMap<string, string>; after: ReadonlyMap<string, string> }) => Promise<T>,
 ) {
   const root = (await git(resolve(options.repository), ["rev-parse", "--show-toplevel"])).trim();
   const resolveCommit = async (ref: string) =>
     (await git(root, ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`])).trim();
-  const head = await resolveCommit(options.head);
-  const base = (await git(root, ["merge-base", await resolveCommit(options.base), head])).trim();
-  const changed = (
-    await git(root, ["diff", "--no-renames", "--name-status", "-z", base, head, "--"])
-  ).split("\0");
   const temporary = await mkdtemp(join(tmpdir(), "auto-review-"));
   const checkout = join(temporary, "head");
   let added = false;
   try {
+    const snapshot = options.head === undefined ? await snapshotWorkingTree(root, temporary) : undefined;
+    const head = snapshot ?? (await resolveCommit(options.head ?? "HEAD"));
+    const base = (await git(root, ["merge-base", await resolveCommit(options.base), head])).trim();
+    const changed = (
+      await git(root, ["diff", "--no-renames", "--name-status", "-z", base, head, "--"])
+    ).split("\0");
     await git(root, [
       "-c",
       "core.hooksPath=/dev/null",
@@ -106,6 +133,7 @@ export async function withReviewContext<T>(
       packContext({
         base,
         head,
+        workingTreeSnapshot: snapshot !== undefined,
         changes,
         index,
         before,

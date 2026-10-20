@@ -242,7 +242,7 @@ async function main(): Promise<void> {
       controller.abort(new Error("Review cancelled."));
     };
     process.on("SIGINT", cancel).on("SIGTERM", cancel);
-    console.error("Building review context from committed changes...");
+    console.error("Building review context...");
     await withReviewContext(
       {
         repository: resolve(INVOKED_FROM, args.repository),
@@ -252,7 +252,7 @@ async function main(): Promise<void> {
       },
       async (context, checkout) => {
         console.error(
-          `${context.changes.length} changed JS/TS file(s), ${context.snippets.length} source range(s). Local edits are excluded.`,
+          `${context.changes.length} changed JS/TS file(s), ${context.snippets.length} source range(s). ${context.workingTreeSnapshot ? "Reviewing a snapshot of uncommitted work; later edits are not included." : "Local edits are excluded."}`,
         );
         const save = async (result: object, label: string) => {
           const destination = args.output
@@ -288,6 +288,7 @@ async function main(): Promise<void> {
               status: cancelled ? "cancelled" : "failed",
               base: context.base,
               head: context.head,
+              workingTreeSnapshot: context.workingTreeSnapshot ?? false,
               error: error instanceof Error ? error.message : String(error),
               provider,
             },
