@@ -1,6 +1,6 @@
 export function parseReviewArguments(args: string[]) {
   let base = "";
-  let head = "HEAD";
+  let head: string | undefined;
   let repository = ".";
   let agent: "codex" | "claude" = "codex";
   let model: string | undefined;
@@ -42,7 +42,7 @@ export function parseReviewArguments(args: string[]) {
   }
   if (!base)
     throw new Error(
-      "review requires --base <branch-or-commit>. It reviews committed changes from the merge base to --head (default HEAD), excluding local edits.",
+      "review requires --base <branch-or-commit>. It reviews changes from the merge base to --head, or to a snapshot of the working tree (HEAD plus uncommitted and untracked files) when --head is omitted.",
     );
   return { command: "review" as const, base, head, repository, agent, model, output, dryRun };
 }

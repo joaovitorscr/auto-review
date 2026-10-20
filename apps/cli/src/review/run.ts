@@ -145,6 +145,7 @@ export async function review(
         : ("complete" as const),
     base: context.base,
     head: context.head,
+    workingTreeSnapshot: context.workingTreeSnapshot ?? false,
     contextHash: createHash("sha256").update(serialized).digest("hex"),
     policyVersion: 3,
     reviewMethod: "static_code_review" as const,
@@ -275,7 +276,7 @@ export function renderReview(report: Awaited<ReturnType<typeof review>>) {
   const lines = [
     `# AutoReview`,
     "",
-    `Review of ${report.base.slice(0, 12)}..${report.head.slice(0, 12)}.`,
+    `Review of ${report.base.slice(0, 12)}..${report.head.slice(0, 12)}${report.workingTreeSnapshot ? " (working-tree snapshot)" : ""}.`,
     "",
   ];
   if (report.status === "partial")

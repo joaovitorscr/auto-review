@@ -19,9 +19,11 @@ The command prints progress to stderr and a Markdown report to stdout. `--output
 
 ## Revisions and source selection
 
-`--base` is required. The comparison starts at the merge base of that ref and `--head`, which defaults to HEAD. It covers committed branch changes, excluding staged edits, unstaged edits and untracked files. Commit the changes you want reviewed before running the command.
+`--base` is required. The comparison starts at the merge base of that ref and the head.
 
-A temporary detached Git worktree supplies both the AST and the head source snippets. The command removes its worktree after completion or a handled error. It leaves the caller's branch, index and working files intact. Git checkout hooks are disabled for this worktree. It does not install dependencies or execute the project's tests. An abruptly killed parent process can leave a temporary worktree that requires manual cleanup.
+Without `--head`, a dirty working tree is reviewed as a snapshot. The Git adapter copies the index to a temporary `GIT_INDEX_FILE`, runs `git add -A` into it, and commits the resulting tree on top of HEAD with `commit-tree`. The snapshot includes staged, unstaged and untracked files and respects `.gitignore`. The caller's index, branch and files are untouched, and edits made while the review runs are not included. The snapshot commit is unreferenced, so `git gc` eventually removes it. The context and report set `workingTreeSnapshot: true`, which means `head` names that throwaway commit and not one in the branch history. A clean tree reviews HEAD. An explicit `--head` reviews only that commit and ignores local edits.
+
+A temporary detached Git worktree supplies both the AST and the head source snippets. The command removes its worktree after completion or a handled error. Git checkout hooks are disabled for this worktree. It does not install dependencies or execute the project's tests. An abruptly killed parent process can leave a temporary worktree that requires manual cleanup.
 
 The Git adapter extracts patches and changed head lines, with a nearest surviving head line as the anchor for a deletion. Paths come from Git's NUL-delimited output, and per-file diffs use literal pathspecs. Renames are represented as a deletion and an addition.
 

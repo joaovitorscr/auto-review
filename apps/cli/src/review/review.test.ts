@@ -74,7 +74,7 @@ describe("review inputs and diff ranges", () => {
     expect(parseArguments(["review", "--base", "main", "--dry-run"])).toMatchObject({
       command: "review",
       base: "main",
-      head: "HEAD",
+      head: undefined,
       agent: "codex",
       dryRun: true,
     });
@@ -485,6 +485,52 @@ describe("Git and AST context", () => {
       ).rejects.toThrow("provider failed");
       expect(git("worktree", "list", "--porcelain")).toBe(beforeWorktrees);
       expect(await readFile(join(root, "amount.ts"), "utf8")).toBe("local dirty work\n");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reviews a frozen snapshot of staged, unstaged and untracked work without touching the index or files", async () => {
+    const root = await mkdtemp(join(tmpdir(), "auto-review-fixture-"));
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
+    try {
+      git("init", "--quiet");
+      git("config", "commit.gpgsign", "false");
+      git("config", "user.name", "Fixture");
+      git("config", "user.email", "fixture@example.test");
+      await writeFile(join(root, ".gitignore"), "secret.ts\n");
+      await writeFile(join(root, "amount.ts"), "export const amount = (cents: number) => cents / 100;\n");
+      await writeFile(join(root, "staged.ts"), "export const staged = 1;\n");
+      git("add", ".");
+      git("-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "base");
+      const base = git("rev-parse", "HEAD");
+      await writeFile(join(root, "staged.ts"), "export const staged = 2;\n");
+      git("add", "staged.ts");
+      await writeFile(join(root, "amount.ts"), "export const amount = (cents: number) => cents;\n");
+      await writeFile(join(root, "untracked.ts"), "export const untracked = true;\n");
+      await writeFile(join(root, "secret.ts"), "export const secret = true;\n");
+      const status = git("status", "--porcelain", "--untracked-files=all");
+      const staged = git("diff", "--cached", "--name-only");
+      const packed = await withReviewContext({ repository: root, base: "HEAD" }, async (result, checkout) => {
+        // Edits made while the review runs do not reach the snapshot.
+        await writeFile(join(root, "amount.ts"), "edited during review\n");
+        expect(await readFile(join(checkout, "amount.ts"), "utf8")).toContain("=> cents;");
+        return result;
+      });
+      expect(packed.workingTreeSnapshot).toBe(true);
+      expect(packed.base).toBe(base);
+      expect(packed.head).not.toBe(base);
+      expect(packed.changes.map((change) => change.file).sort()).toEqual(["amount.ts", "staged.ts", "untracked.ts"]);
+      expect(git("rev-parse", "HEAD")).toBe(base);
+      expect(git("diff", "--cached", "--name-only")).toBe(staged);
+      await writeFile(join(root, "amount.ts"), "export const amount = (cents: number) => cents;\n");
+      expect(git("status", "--porcelain", "--untracked-files=all")).toBe(status);
+      expect(await readFile(join(root, "untracked.ts"), "utf8")).toBe("export const untracked = true;\n");
+      // A clean tree, or an explicit --head, reviews the commit itself.
+      const explicit = await withReviewContext({ repository: root, base: "HEAD", head: "HEAD" }, async (result) => result);
+      expect(explicit.workingTreeSnapshot).toBe(false);
+      expect(explicit.changes).toEqual([]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
