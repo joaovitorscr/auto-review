@@ -1,6 +1,6 @@
 # Local reviewer
 
-The `review` command connects the AST index to Codex and writes a local review. It does not post to GitHub or update the dashboard.
+The `review` command connects the AST index to Codex and writes a local review. It does not post to GitHub or update the dashboard; `post` publishes a saved report (see [Posting to a pull request](#posting-to-a-pull-request)).
 
 ```sh
 # Inspect the exact model input without running Codex.
@@ -56,6 +56,18 @@ Report version 2 and policy version 2 require a structured audit for each detect
 The detector audit is in `finding.audit`. The validator audit is in `records[].validatorAudit`. Locally rejected candidates retain the detector audit but have no validator audit because no validator examined them. Model-rejected and uncertain candidates retain both assessments. Invalid or missing audits, and evidence references outside the candidate's evidence array, fail the run rather than fabricate an explanation.
 
 The graph displays both assessments beneath Evidence in the collapsed Review explanation section. It continues to accept version 1 reports with their original short validation reasons. Old runs are not backfilled; a new review is required to record structured explanations.
+
+## Posting to a pull request
+
+```sh
+pnpm pr review --base origin/main --head origin/feature-branch --output /tmp/review.json
+pnpm pr post /tmp/review.json 42 --dry-run   # print the GitHub review
+pnpm pr post /tmp/review.json 42             # post it
+```
+
+`post` runs no model. It turns a saved report's findings at `--min` severity or above (default `high`, the Phase D policy; `medium` is the other option) into one GitHub review with event `COMMENT`, one inline comment per finding on the report's head line, through `gh api` under the developer's own account. Without a pull request argument, `gh` picks the one for the current branch. Nothing is posted when no finding qualifies.
+
+It refuses failed or cancelled reports, working-tree snapshots, and a report whose head is not the pull request's current head commit, since its lines would land on the wrong code. Every comment and the review body end with an `<!-- auto-review -->` marker so a later pass can tell AutoReview's comments from the developer's. Re-checking posted findings after new pushes, and recording whether each was acted on, are not built yet.
 
 ## Agents
 

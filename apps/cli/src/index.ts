@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type {
@@ -15,6 +16,7 @@ import { withReviewContext } from "./review/git.js";
 import { codexProvider } from "./review/codex.js";
 import { claudeProvider } from "./review/claude.js";
 import { review, renderReview } from "./review/run.js";
+import { reviewPayload } from "./review/post.js";
 import { indexRepository } from "./repository-index.js";
 import { avatarUrl, fileDiffUrl, parseArguments, repositoryName } from "./input.js";
 
@@ -299,6 +301,34 @@ async function main(): Promise<void> {
         }
       },
     );
+    return;
+  }
+  if (args.command === "post") {
+    const payload = reviewPayload(JSON.parse(await readFile(resolve(INVOKED_FROM, args.report), "utf8")), args.minimum);
+    if (!payload) {
+      console.error(`No findings at ${args.minimum} severity or above; nothing to post.`);
+      return;
+    }
+    const { stdout } = await exec("gh", ["pr", "view", ...(args.target ? [args.target] : []), "--json", "number,url,headRefOid"]);
+    const pullRequest = JSON.parse(stdout) as { number: number; url: string; headRefOid: string };
+    // Report lines belong to the reviewed commit; on any other head GitHub would misplace or reject them.
+    if (pullRequest.headRefOid !== payload.commit_id)
+      throw new Error(
+        `The report reviewed ${payload.commit_id.slice(0, 12)}, but ${pullRequest.url} is at ${pullRequest.headRefOid.slice(0, 12)}. Review the pull request head again before posting.`,
+      );
+    if (args.dryRun) {
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      return;
+    }
+    const temporary = await mkdtemp(join(tmpdir(), "auto-review-post-"));
+    try {
+      const input = join(temporary, "review.json");
+      await writeFile(input, JSON.stringify(payload), "utf8");
+      await exec("gh", ["api", "--method", "POST", `repos/${repositoryName(pullRequest.url)}/pulls/${pullRequest.number}/reviews`, "--input", input]);
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
+    console.error(`Posted ${payload.comments.length} comment(s) to ${pullRequest.url}`);
     return;
   }
   const { target, output } = args;
