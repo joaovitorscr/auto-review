@@ -88,9 +88,15 @@ async function main() {
       const head = comments[0]!.commit;
       const reference = comments.filter((comment) => comment.commit === head);
       // The base branch may be gone; the base commit GitHub recorded on the pull request is not.
+      // Corpus clones have no remote, so commits are fetched read-only by URL.
       for (const commit of [pr.base.sha, head])
-        await git(root, ["cat-file", "-e", `${commit}^{commit}`]).catch(() => git(root, ["fetch", "-q", "origin", commit]));
+        await git(root, ["cat-file", "-e", `${commit}^{commit}`]).catch(() =>
+          git(root, ["fetch", "-q", "--no-tags", "--no-write-fetch-head", `https://github.com/${repository}`, commit]),
+        );
       const base = await git(root, ["merge-base", pr.base.sha, head]);
+      // Pinned so garbage collection keeps commits no branch points at.
+      await git(root, ["update-ref", `refs/cases/${name}/base`, base]);
+      await git(root, ["update-ref", `refs/cases/${name}/head`, head]);
       const label = {
         split: "holdout",
         kind: "regression",
