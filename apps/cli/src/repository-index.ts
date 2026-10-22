@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { lstat, readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import ts from "typescript";
 import { indexProgram } from "./ast.js";
@@ -18,11 +18,42 @@ export function isIndexablePath(file: string) {
 /**
  * Indexes existing tracked and unignored JS/TS files in a local Git checkout.
  * `dependencyRoot` is a checkout with installed packages, used when `directory` is a fresh worktree.
+ * `focus` (repository-relative paths) limits the index to those files, the files whose import
+ * specifiers name them, and the files they import: what one-hop review context needs, without
+ * type-checking the rest of a large repository.
  * Unresolvable tsconfig files fall back to default options and are listed in `configErrors`.
  */
+/**
+ * The focus files plus files whose import specifiers end in a focus file's name, a cheap text
+ * superset of their importers. What the focus files import is added from the compiled program.
+ */
+async function focusFiles(root: string, repositoryFiles: string[], focus: string[]) {
+  const files = new Set(focus.filter((file) => isIndexablePath(file) && repositoryFiles.includes(file)));
+  const names = new Set(
+    [...files].map((file) => {
+      const name = basename(file).replace(/\.[^.]+$/, "");
+      return name === "index" ? basename(dirname(file)) : name;
+    }),
+  );
+  const patterns = [...names].flatMap((name) =>
+    ["", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"].flatMap((extension) => [`/${name}${extension}"`, `/${name}${extension}'`]),
+  );
+  if (patterns.length) {
+    const { stdout } = await exec("git", ["-C", root, "grep", "-l", "-F", ...patterns.flatMap((pattern) => ["-e", pattern]), "--"], {
+      maxBuffer: 50 * 1024 * 1024,
+    }).catch((error: { code?: number; stdout?: string }) => {
+      // git grep exits 1 when nothing matches.
+      if (error.code === 1) return { stdout: "" };
+      throw error;
+    });
+    for (const file of stdout.split("\n")) if (file) files.add(file);
+  }
+  return [...files];
+}
+
 export async function indexRepository(
   directory: string,
-  options: { dependencyRoot?: string } = {},
+  options: { dependencyRoot?: string; focus?: string[] } = {},
 ) {
   const { stdout: gitRoot } = await exec("git", [
     "-C",
@@ -75,7 +106,9 @@ export async function indexRepository(
     fileExists: (path) => ts.sys.fileExists(configPath(path)),
     readFile: (path) => ts.sys.readFile(configPath(path)),
   };
-  const candidates = repositoryFiles.filter(isIndexablePath).sort();
+  const candidates = (options.focus ? await focusFiles(root, repositoryFiles, options.focus) : repositoryFiles)
+    .filter(isIndexablePath)
+    .sort();
   const paths = new Set<string>();
   for (const file of candidates) {
     const path = join(root, file);
@@ -109,6 +142,9 @@ export async function indexRepository(
     diagnostics: [],
   };
   const configErrors: Array<{ config: string; message: string }> = [];
+  // Files already indexed by an earlier tsconfig group, so a shared dependency is not indexed twice.
+  const indexed = new Set<string>();
+  const focus = options.focus && new Set(options.focus.map((file) => join(root, file)));
   for (const [config, files] of groups) {
     let options: ts.CompilerOptions = {
       module: ts.ModuleKind.NodeNext,
@@ -134,16 +170,31 @@ export async function indexRepository(
       else options = { ...options, ...parsed!.options };
     }
     const program = ts.createProgram(files, { ...options, allowJs: true, noEmit: true });
-    const indexed = indexProgram(program, root, paths);
+    const own = new Set(files.filter((file) => !indexed.has(file)));
+    if (focus) {
+      // Add the repository files a focus file imports, as the compiler resolved them.
+      const checker = program.getTypeChecker();
+      for (const file of files) {
+        if (!focus.has(file)) continue;
+        for (const statement of program.getSourceFile(file)?.statements ?? []) {
+          const specifier =
+            ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier : undefined;
+          const target = specifier && checker.getSymbolAtLocation(specifier)?.declarations?.[0]?.getSourceFile().fileName;
+          if (target?.startsWith(`${root}/`) && isIndexablePath(target.slice(root.length + 1)) && !indexed.has(target)) own.add(target);
+        }
+      }
+    }
+    for (const file of own) indexed.add(file);
+    const indexedProgram = indexProgram(program, root, own);
     const ownFiles = new Set(
-      files.map((file) => file.slice(root.length + 1).replaceAll("\\", "/")),
+      [...own].map((file) => file.slice(root.length + 1).replaceAll("\\", "/")),
     );
     // Appended one by one: spreading a large repository's symbols into push() overflows the call stack.
-    for (const file of indexed.files) if (ownFiles.has(file)) result.files.push(file);
-    for (const symbol of indexed.symbols) if (ownFiles.has(symbol.file)) result.symbols.push(symbol);
-    for (const entry of indexed.imports) if (ownFiles.has(entry.file)) result.imports.push(entry);
-    for (const entry of indexed.calls) if (ownFiles.has(entry.file)) result.calls.push(entry);
-    for (const entry of indexed.diagnostics) if (ownFiles.has(entry.file)) result.diagnostics.push(entry);
+    for (const file of indexedProgram.files) if (ownFiles.has(file)) result.files.push(file);
+    for (const symbol of indexedProgram.symbols) if (ownFiles.has(symbol.file)) result.symbols.push(symbol);
+    for (const entry of indexedProgram.imports) if (ownFiles.has(entry.file)) result.imports.push(entry);
+    for (const entry of indexedProgram.calls) if (ownFiles.has(entry.file)) result.calls.push(entry);
+    for (const entry of indexedProgram.diagnostics) if (ownFiles.has(entry.file)) result.diagnostics.push(entry);
   }
   const ids = new Set(result.symbols.map((symbol) => symbol.id));
   for (const call of result.calls) if (call.target && !ids.has(call.target)) delete call.target;

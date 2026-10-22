@@ -70,7 +70,10 @@ export async function withReviewContext<T>(
       head,
     ]);
     added = true;
-    const index = await indexRepository(checkout, { dependencyRoot: root });
+    const focus = [];
+    for (let position = 0; position < changed.length - 1; position += 2)
+      if (changed[position] !== "D") focus.push(changed[position + 1]!);
+    const index = await indexRepository(checkout, { dependencyRoot: root, focus });
     const after = new Map<string, string>();
     for (const file of index.files) after.set(file, await readFile(join(checkout, file), "utf8"));
     const before = new Map<string, string>();
