@@ -10,7 +10,8 @@
     "pr": "vp run --filter @auto-review/cli start",
     "test": "vp test",
     "eval": "vp run --filter @auto-review/cli eval",
-    "progress": "vp run --filter @auto-review/cli progress"
+    "progress": "vp run --filter @auto-review/cli progress",
+    "mine": "vp run --filter @auto-review/cli mine"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
