@@ -138,11 +138,12 @@ export async function indexRepository(
     const ownFiles = new Set(
       files.map((file) => file.slice(root.length + 1).replaceAll("\\", "/")),
     );
-    result.files.push(...indexed.files.filter((file) => ownFiles.has(file)));
-    result.symbols.push(...indexed.symbols.filter((symbol) => ownFiles.has(symbol.file)));
-    result.imports.push(...indexed.imports.filter((entry) => ownFiles.has(entry.file)));
-    result.calls.push(...indexed.calls.filter((entry) => ownFiles.has(entry.file)));
-    result.diagnostics.push(...indexed.diagnostics.filter((entry) => ownFiles.has(entry.file)));
+    // Appended one by one: spreading a large repository's symbols into push() overflows the call stack.
+    for (const file of indexed.files) if (ownFiles.has(file)) result.files.push(file);
+    for (const symbol of indexed.symbols) if (ownFiles.has(symbol.file)) result.symbols.push(symbol);
+    for (const entry of indexed.imports) if (ownFiles.has(entry.file)) result.imports.push(entry);
+    for (const entry of indexed.calls) if (ownFiles.has(entry.file)) result.calls.push(entry);
+    for (const entry of indexed.diagnostics) if (ownFiles.has(entry.file)) result.diagnostics.push(entry);
   }
   const ids = new Set(result.symbols.map((symbol) => symbol.id));
   for (const call of result.calls) if (call.target && !ids.has(call.target)) delete call.target;
