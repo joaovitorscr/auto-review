@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "tsx src/index.ts",
     "eval": "tsx src/eval.ts",
-    "progress": "tsx src/progress.ts"
+    "progress": "tsx src/progress.ts",
+    "mine": "tsx src/mine.ts"
   },
   "dependencies": {
     "@auto-review/github": "workspace:*",
