@@ -173,7 +173,7 @@ async function main() {
                   : omittedRanges.some((range) => range.file === file && range.start <= lines[1] && range.end >= lines[0])
                     ? "retrieved, dropped by the pack budget"
                     : "never retrieved";
-            return comments.map((comment) => {
+            const result = comments.map((comment) => {
               // Without explicit needs, seeing the commented line itself (or any anchor) is enough.
               const around = (anchor: { file: string; line: number }) => ({ file: anchor.file, lines: [Math.max(1, anchor.line - 5), anchor.line + 5] as [number, number] });
               const anchors = [comment, ...(comment.anchors ?? [])].map(around);
@@ -183,11 +183,12 @@ async function main() {
               const split = !missing.length && !batches.some((batch) => needs.every((need) => shows(batch, need.file, need.lines)));
               return { file: comment.file, line: comment.line, severity: comment.severity, visible: !missing.length && !split, split, missing };
             });
+            return { batches: batches.length, comments: result };
           },
         );
-        const visible = recall.filter((comment) => comment.visible).length;
-        process.stdout.write(`${name}: ${visible}/${recall.length} comments fully visible to the detector\n`);
-        for (const comment of recall.filter((entry) => !entry.visible))
+        const visible = recall.comments.filter((comment) => comment.visible).length;
+        process.stdout.write(`${name}: ${visible}/${recall.comments.length} comments fully visible to the detector in ${recall.batches} batch(es)\n`);
+        for (const comment of recall.comments.filter((entry) => !entry.visible))
           process.stdout.write(`  ${comment.severity} ${comment.file}:${comment.line} ${comment.split ? "needs ranges split across batches" : `missing ${comment.missing.map((need) => `${need.file}:${need.lines[0]}-${need.lines[1]} (${need.reason})`).join(", ")}`}\n`);
         continue;
       }
