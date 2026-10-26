@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -442,13 +442,17 @@ describe("Git and AST context", () => {
         'import { amount } from "./amount";\nexport function charge() { return { dollars: amount(100) }; }\n',
       );
       await writeFile(join(root, "AGENTS.md"), "Amounts sent to the API are in dollars.\n");
+      await writeFile(join(root, "legacy.ts"), "export const legacy = 1;\nexport const removed = 2;\n");
       git("add", ".");
       git("-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "base");
       const base = git("rev-parse", "HEAD");
       await writeFile(join(root, "amount.ts"), context.snippets[0]!.text + "\n");
       await writeFile(join(root, "NOTES.md"), "Changed docs.\n");
       await writeFile(join(root, "styles.css"), "body { color: red; }\n");
-      git("add", ".");
+      await mkdir(join(root, "dist"));
+      await writeFile(join(root, "dist", "amount.js"), "export const amount = 1;\n");
+      await rm(join(root, "legacy.ts"));
+      git("add", "-A", "-f");
       git("-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "regression");
       const head = git("rev-parse", "HEAD");
       git("checkout", "--quiet", "-b", "advanced-base", base);
@@ -463,9 +467,11 @@ describe("Git and AST context", () => {
       );
       expect(packed.base).toBe(base);
       expect(packed.head).toBe(head);
-      expect(packed.changes.map((change) => change.file)).toEqual(["amount.ts"]);
+      expect(packed.changes.map((change) => change.file)).toEqual(["amount.ts", "legacy.ts", "styles.css"]);
+      expect(packed.changes[1]!.patch).toContain("(file deleted; 2 removed lines not shown)");
+      expect(packed.changes[1]!.patch).not.toContain("removed = 2");
       expect(packed.ignored).toEqual(["NOTES.md"]);
-      expect(packed.skipped).toEqual(["styles.css"]);
+      expect(packed.skipped).toEqual(["dist/amount.js"]);
       expect(packed.snippets).toContainEqual(
         expect.objectContaining({ file: "caller.ts", reason: "caller charge" }),
       );
