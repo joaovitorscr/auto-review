@@ -32,6 +32,8 @@ export function macroscopeComments(comments: ReviewComment[]) {
   return comments
     .filter((comment) => comment.user.login.startsWith("macroscopeapp") && !comment.in_reply_to_id && !comment.body.includes('"kind":"check_run"'))
     .filter((comment) => comment.original_line !== null)
+    // Repository-convention comments (namespace imports, error shapes) carry no severity marker.
+    .filter((comment) => /\*\*(Critical|High|Medium|Low)\*\*/.test(comment.body))
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
     .map((comment) => {
       // Bodies open with hidden markers and a severity line, then a code link, then the explanation.
@@ -40,13 +42,17 @@ export function macroscopeComments(comments: ReviewComment[]) {
         .split("\n")
         .filter((line) => line.trim() && !/\*\*(Critical|High|Medium|Low)\*\*/.test(line) && !/^https?:\/\//.test(line.trim()) && !/^(✅ Resolved in|No longer relevant as of)/.test(line.trim()))
         .join(" ");
+      // "Also found in N other location(s)" names other lines the same bug can be reported at.
+      const also = /Also found in \d+ other location[\s\S]*?<\/details>/.exec(comment.body)?.[0] ?? "";
+      const anchors = [...also.matchAll(/^`([^`\s]+):(\d+)`$/gm)].map((match) => ({ file: match[1]!, line: Number(match[2]) }));
       const text = prose.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
       return {
         commit: comment.original_commit_id,
         file: comment.path,
         line: comment.original_line!,
-        severity: /\*\*(Critical|High|Medium|Low)\*\*/.exec(comment.body)?.[1] ?? "Medium",
+        severity: /\*\*(Critical|High|Medium|Low)\*\*/.exec(comment.body)![1]!,
         title: text.slice(0, 160),
+        ...(anchors.length ? { anchors } : {}),
         // "Resolved in" and "No longer relevant" are Macroscope's notes after a later push changed the code.
         status: comment.body.includes("✅ Resolved in") ? "resolved" : comment.body.includes("No longer relevant as of") ? "no_longer_relevant" : "open",
       };
