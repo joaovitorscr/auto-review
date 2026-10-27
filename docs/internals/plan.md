@@ -1,5 +1,22 @@
 # Plan of action
 
+## Holdout baseline (2026-10-27)
+
+First run on cases never tuned on: 7 one-pass t3code cases, Codex low effort, detector-only
+(`pnpm progress -- runs`, note "t3code holdout baseline"; 14187 hit the usage limit). Prediction
+was ≥ 6/15. Result: **2/11 correctness comments by content** (Critical 1/1, High 1/10; the
+other 4 references were convention notes, now dropped by the miner), from 4 candidates total. Both
+non-matching candidates are well evidenced; unlabeled.
+
+Every miss was visible. 6 of the 9 missed Highs have a survey entry at or near the commented line
+rated "risk none"; the detector spends 27-89s per PR and writes 2-19 survey lines, about one per
+hunk. The missed Highs are lifecycle and concurrency traces (stale payload overwrites a rollback,
+process group outlives an interrupted scope, PID reuse). It looks, then does not trace.
+
+Next: the same 7 cases at `--effort high` (7 Codex passes, next window). Prediction: ≥ 4/11.
+If not, effort is not the lever and the detector needs per-hunk questions it must answer with
+a trace, not a one-line survey.
+
 ## Reset (2026-10-19, after a planning review with GPT-6-Astra)
 
 Why it stalled: the score could not tell a better reviewer from a different score. Proximity
