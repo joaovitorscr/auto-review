@@ -60,14 +60,18 @@ export function runAgent(options: {
       if (options.signal?.aborted) reject(options.signal.reason);
       else if (timedOut)
         reject(new Error(`${options.name} review pass timed out after its time limit.`));
-      else if (code !== 0)
+      else if (code !== 0) {
+        // Codex echoes the prompt to stderr and states the cause (a usage limit, a bad model) on ERROR: lines.
+        const errors = [...new Set(stderr.split("\n").filter((line) => line.startsWith("ERROR:")))];
         // Claude Code reports failures as JSON on stdout and leaves stderr empty.
         reject(
           new Error(
-            `${options.name} exited with code ${code}. ${options.hint}\n${stderr || stdout.slice(-1500)}`,
+            errors.length
+              ? `${options.name} exited with code ${code}: ${errors.join("\n")}`
+              : `${options.name} exited with code ${code}. ${options.hint}\n${stderr || stdout.slice(-1500)}`,
           ),
         );
-      else accept(stdout);
+      } else accept(stdout);
     });
     child.stdin.end(options.prompt);
   });
