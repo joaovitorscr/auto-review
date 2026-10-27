@@ -86,7 +86,14 @@ process.stdin.on('end', () => {
       await expect(
         codexProvider({ checkout: directory, executable }).complete({ prompt: "test", schema: {} }),
       ).rejects.toThrow("valid JSON");
-    });
+    });    await withExecutable(
+      'process.stderr.write("prompt echo\\nERROR: You have hit your usage limit.\\nERROR: You have hit your usage limit.\\n"); process.exit(1)',
+      async (directory, executable) => {
+        await expect(
+          codexProvider({ checkout: directory, executable }).complete({ prompt: "test", schema: {} }),
+        ).rejects.toThrow(/^Codex exited with code 1: ERROR: You have hit your usage limit\.$/);
+      },
+    );
   });
   it("terminates its own child when the pass times out", async () => {
     await withExecutable("setInterval(() => {}, 1000)", async (directory, executable) => {
