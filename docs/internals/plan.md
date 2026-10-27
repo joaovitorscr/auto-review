@@ -1,5 +1,33 @@
 # Plan of action
 
+## Holdout baseline (2026-10-27)
+
+First run on cases never tuned on: 7 one-pass t3code cases, Codex low effort, detector-only
+(`pnpm progress -- runs`, note "t3code holdout baseline"; 14187 hit the usage limit). Prediction
+was ≥ 6/15. Result: **2/11 correctness comments by content** (Critical 1/1, High 1/10; the
+other 4 references were convention notes, now dropped by the miner), from 4 candidates total. Both
+non-matching candidates are well evidenced; unlabeled.
+
+Every miss was visible. 6 of the 9 missed Highs have a survey entry at or near the commented line
+rated "risk none"; the detector spends 27-89s per PR and writes 2-19 survey lines, about one per
+hunk. The missed Highs are lifecycle and concurrency traces (stale payload overwrites a rollback,
+process group outlives an interrupted scope, PID reuse). It looks, then does not trace.
+
+High effort, same cases (note "t3code holdout, detector-only, high effort"; usage limit after
+13879). Prediction ≥ 4/11 failed: **by content still 1/6 on the five cases that ran** (the
+Critical), though 5/6 by location. 13735, 13792 and 13879 each got one candidate at the
+commented region describing a different, concrete bug (recovery skips the child thread; stop leaves
+native subagents running; an inspection failure lets a live owner's child be reaped). Low effort
+had found 13879:178; high effort did not. Effort moves where the detector looks, not whether it
+finds Macroscope's bug.
+
+The detector prompt's checklist (input shapes, UI state, sibling guards) comes from Othos misses;
+it says nothing about interruption, cleanup ordering or races, which is where every t3code High is.
+
+Next: label the 4 high-effort and 4 low-effort candidates (`pnpm progress -- label`). If most are
+correct, overlap with Macroscope undercounts us and precision on real PRs becomes the metric; if
+most are wrong, effort only buys confident noise.
+
 ## Reset (2026-10-19, after a planning review with GPT-6-Astra)
 
 Why it stalled: the score could not tell a better reviewer from a different score. Proximity
