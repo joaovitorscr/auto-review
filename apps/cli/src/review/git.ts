@@ -3,16 +3,17 @@ import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { indexRepository, isIndexablePath } from "../repository-index.js";
+import { indexRepository } from "../repository-index.js";
 import { packContext, parseHunks, reviewLines } from "./context.js";
 import type { Change, ReviewContext } from "./context.js";
 
 const exec = promisify(execFile);
-// Docs, lockfiles, images and ignore files cannot change runtime behavior, so they do not make a review partial.
+// Docs, lockfiles, images, ignore files and recorded transcripts cannot change runtime behavior, so they
+// do not make a review partial. Transcripts (.ndjson) added a quarter more detector passes on t3code,
+// and Macroscope's comments on them called valid JSON lines malformed.
 const nonCode =
-  /(^|\/)(LICENSE|CODEOWNERS|\.gitignore|\.gitattributes|\.DS_Store|[^/]+\.(md|mdx|txt|lock|png|jpe?g|gif|svg|ico|webp)|pnpm-lock\.yaml|package-lock\.json)$/i;
-// Schema and migration files have no AST here but decide what the code's inputs reach; they are reviewed as text.
-const textReviewed = /\.(sql|prisma|graphql|gql)$/i;
+  /(^|\/)(LICENSE|CODEOWNERS|\.gitignore|\.gitattributes|\.DS_Store|[^/]+\.(md|mdx|txt|lock|png|jpe?g|gif|svg|ico|webp|ndjson|jsonl)|pnpm-lock\.yaml|package-lock\.json)$/i;
+const generated = /(^|\/)(node_modules|dist|build|coverage|vendor)\/|\.d\.[cm]?ts$/;
 const git = async (root: string, args: string[], env?: NodeJS.ProcessEnv) =>
   (await exec("git", ["-C", root, ...args], { maxBuffer: 20 * 1024 * 1024, env: env && { ...process.env, ...env } })).stdout;
 
@@ -83,14 +84,18 @@ export async function withReviewContext<T>(
     for (let position = 0; position < changed.length - 1; position += 2) {
       const status = changed[position]!;
       const file = changed[position + 1]!;
-      if (textReviewed.test(file) && status !== "D" && !after.has(file))
-        after.set(file, await readFile(join(checkout, file), "utf8").catch(() => ""));
-      if (!(isIndexablePath(file) || textReviewed.test(file)) || (status !== "D" && !after.has(file))) {
-        (nonCode.test(file) ? ignored : skipped).push(file);
+      if (nonCode.test(file)) {
+        ignored.push(file);
         continue;
       }
-      if (status !== "A") before.set(file, await git(root, ["show", `${base}:${file}`]));
-      const patch = await git(root, [
+      if (generated.test(file)) {
+        skipped.push(file);
+        continue;
+      }
+      // Files without an AST here (SQL, JSON, Kotlin, patches) are still reviewed as text.
+      if (status !== "D" && !after.has(file))
+        after.set(file, await readFile(join(checkout, file), "utf8").catch(() => ""));
+      const fullPatch = await git(root, [
         "--literal-pathspecs",
         "diff",
         "--no-ext-diff",
@@ -102,6 +107,18 @@ export async function withReviewContext<T>(
         "--",
         file,
       ]);
+      if (/^Binary files /m.test(fullPatch)) {
+        ignored.push(file);
+        continue;
+      }
+      if (status !== "A") before.set(file, await git(root, ["show", `${base}:${file}`]));
+      // A deleted file has no head line to report on; its removed text filled detector passes
+      // (t3code-14018: 63 files, 20.7k lines) without anything to anchor a finding to.
+      const removed = fullPatch.indexOf("\n@@");
+      const patch =
+        status === "D" && removed >= 0
+          ? `${fullPatch.slice(0, removed)}\n(file deleted; ${fullPatch.slice(removed).split("\n-").length - 1} removed lines not shown)\n`
+          : fullPatch;
       const source = after.get(file);
       const lineCount =
         source === undefined || source === ""
