@@ -26,13 +26,23 @@ describe("macroscopeComments", () => {
     expect(fourth).toMatchObject({ severity: "Critical", title: "Tokens leak to the log." });
   });
 
-  it("skips replies, other authors, check-run agents and comments without a line", () => {
+  it("records the other locations Macroscope lists for the same bug as anchors", () => {
+    const [found] = macroscopeComments([
+      comment(
+        "🟠 **High** `ledger.ts:178`\n\nThe process group survives interruption.\n\n<details>\n<summary>Also found in 1 other location(s)</summary>\n\n`apps/server/runtime.ts:728`\n\n> `track` runs before the finalizer.\n</details>\n\n<details>\n<summary>AI Prompt</summary>\n\n`apps/server/other.ts:9`\n</details>",
+      ),
+    ]);
+    expect(found!.anchors).toEqual([{ file: "apps/server/runtime.ts", line: 728 }]);
+  });
+
+  it("skips replies, other authors, check-run agents, convention notes and comments without a line", () => {
     expect(
       macroscopeComments([
         comment("reply", { in_reply_to_id: 1 }),
         comment("**High** bug", { user: { login: "cursor[bot]" } }),
         comment('**High** rule <!-- macroscope-meta: {"kind":"check_run","config":".macroscope/check-run-agents/ui.md"} -->'),
         comment("**High** file comment", { original_line: null }),
+        comment("<!-- MURMUR_IGNORE -->\n`provider/Ledger.ts:32`\n\nDefine this as `Context.Service`."),
       ]),
     ).toEqual([]);
   });
