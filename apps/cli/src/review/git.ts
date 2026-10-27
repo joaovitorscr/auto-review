@@ -95,7 +95,7 @@ export async function withReviewContext<T>(
       // Files without an AST here (SQL, JSON, Kotlin, patches) are still reviewed as text.
       if (status !== "D" && !after.has(file))
         after.set(file, await readFile(join(checkout, file), "utf8").catch(() => ""));
-      const patch = await git(root, [
+      const fullPatch = await git(root, [
         "--literal-pathspecs",
         "diff",
         "--no-ext-diff",
@@ -107,11 +107,18 @@ export async function withReviewContext<T>(
         "--",
         file,
       ]);
-      if (/^Binary files /m.test(patch)) {
+      if (/^Binary files /m.test(fullPatch)) {
         ignored.push(file);
         continue;
       }
       if (status !== "A") before.set(file, await git(root, ["show", `${base}:${file}`]));
+      // A deleted file has no head line to report on; its removed text filled detector passes
+      // (t3code-14018: 63 files, 20.7k lines) without anything to anchor a finding to.
+      const removed = fullPatch.indexOf("\n@@");
+      const patch =
+        status === "D" && removed >= 0
+          ? `${fullPatch.slice(0, removed)}\n(file deleted; ${fullPatch.slice(removed).split("\n-").length - 1} removed lines not shown)\n`
+          : fullPatch;
       const source = after.get(file);
       const lineCount =
         source === undefined || source === ""
