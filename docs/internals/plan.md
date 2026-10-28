@@ -24,9 +24,20 @@ finds Macroscope's bug.
 The detector prompt's checklist (input shapes, UI state, sibling guards) comes from Acme misses;
 it says nothing about interruption, cleanup ordering or races, which is where every t3code High is.
 
-Next: label the 4 high-effort and 4 low-effort candidates (`pnpm progress -- label`). If most are
-correct, overlap with Macroscope undercounts us and precision on real PRs becomes the metric; if
-most are wrong, effort only buys confident noise.
+Labelled: of the 8 candidates, 6 are correct (3 of them bugs Macroscope missed), 2 low value, none
+incorrect. Precision holds; recall against Macroscope is the gap.
+
+Traced survey, reverted (2026-10-28; note "t3code holdout, detector-only, low effort, traced
+survey"; usage limit after 13879). Each survey entry had to write the ordering most likely to break
+the change (interruption, retry, early or late event, failed dependency) before rating it "none".
+Prediction ≥ 4/11 failed: **1/7 by content on the five cases that ran**, against the baseline's 2/7
+there. It re-found the 13879 owner-inspection bug and added one low-value candidate. On 13726 it
+surveyed the exact commented line and traced the normal order (tool call, then permission) instead
+of the breaking one (permission before the `task` part registers). Writing an ordering down does
+not make the detector pick the ordering that breaks.
+
+Next: ask the specific question at each changed call site, such as "what if this arrives before the
+state it reads exists?", or seed a second pass from the survey's "none" entries.
 
 ## Reset (2026-10-19, after a planning review with GPT-6-Astra)
 
