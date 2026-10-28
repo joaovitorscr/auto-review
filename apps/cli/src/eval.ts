@@ -367,6 +367,12 @@ async function main() {
       "",
     ].join("\n"),
   );
+  // A failed case still records its completed passes, but exits non-zero so a loop of runs stops at a usage limit.
+  for (const result of results)
+    if ("error" in result) {
+      console.error(`eval: ${result.case} failed: ${result.error}`);
+      process.exitCode = 1;
+    }
 }
 
 main().catch((error: unknown) => {
