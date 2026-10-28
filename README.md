@@ -1,8 +1,30 @@
+<p align="center">
+  <img src="docs/assets/hero.svg" alt="AutoReview: a diff, its AST context, and a cited finding, drawn as three stacked layers" width="100%">
+</p>
+
+<p align="center">
+  <a href="#first-run">First run</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#review-a-branch">Review a branch</a> ·
+  <a href="docs/internals/architecture.md">Architecture</a>
+</p>
+
 # AutoReview
 
 An open-source code reviewer that runs locally and uses the coding agent you already have installed. It looks for concrete regressions by reading how a change interacts with the surrounding code, and it reports little else.
 
-Status: early prototype. The local reviewer supports Codex and Claude Code, reviews committed JavaScript and TypeScript changes, and has not yet been measured against a labeled set of real bugs. Treat its findings as leads, and a clean report as "nothing found", not "bug-free".
+> [!WARNING]
+> **Work in progress.** AutoReview is an early prototype. Commands, flags, and the report format change without notice, and nothing here is released or versioned yet.
+>
+> The local reviewer supports Codex and Claude Code, reviews committed JavaScript and TypeScript changes, and has not yet been measured against a labeled set of real bugs. Treat its findings as leads, and a clean report as "nothing found", not "bug-free".
+
+## How it works
+
+The graphic above is the whole pipeline, bottom to top.
+
+1. **Diff.** AutoReview checks out the merge base and HEAD in temporary worktrees and reads the changed lines.
+2. **AST context.** For each changed symbol it pulls in the callers, callees, and imports, so the agent sees the code the change touches and not only the hunk.
+3. **Findings.** Detector passes run through your coding agent. Every finding must cite source that was actually collected. A finding whose citation doesn't match is withheld, and the JSON report still lists it.
 
 ## Requirements
 
