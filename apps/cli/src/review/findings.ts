@@ -48,16 +48,19 @@ const auditSchema = {
 };
 
 // The survey comes first so the detector enumerates changed behaviours before it decides which to propose.
+// sequence makes it trace an ordering before rating a behaviour safe; a one-line verdict skimmed past
+// every lifecycle and race bug on the t3code holdout.
 const surveySchema = {
   type: "array",
   items: {
     type: "object",
     additionalProperties: false,
-    required: ["file", "line", "behaviour", "risk"],
+    required: ["file", "line", "behaviour", "sequence", "risk"],
     properties: {
       file: { type: "string" },
       line: { type: "integer", minimum: 1 },
       behaviour: { type: "string" },
+      sequence: { type: "string" },
       risk: { type: "string" },
     },
   },
@@ -203,7 +206,13 @@ export function parseSurvey(value: unknown) {
   // One entry per changed behaviour; a big part lists far more than the findings cap.
   return array(survey, 200).map((item) => {
     const entry = object(item);
-    return { file: string(entry.file), line: integer(entry.line), behaviour: string(entry.behaviour), risk: string(entry.risk) };
+    return {
+      file: string(entry.file),
+      line: integer(entry.line),
+      behaviour: string(entry.behaviour),
+      ...(entry.sequence === undefined ? {} : { sequence: string(entry.sequence) }),
+      risk: string(entry.risk),
+    };
   });
 }
 
