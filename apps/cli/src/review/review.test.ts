@@ -252,7 +252,7 @@ describe("counter-review", () => {
     expect(validator.prompts[0]).toContain("Try to disprove");
   });
   it("keeps the detector's survey on its pass and tolerates its absence", async () => {
-    const survey = [{ file: "src/a.ts", line: 3, behaviour: "Parses the amount", risk: "none" }];
+    const survey = [{ file: "src/a.ts", line: 3, behaviour: "Parses the amount", sequence: "A retry parses the same string twice; both give 12.5", risk: "none" }];
     const { model } = provider([{ survey, findings: [] }]);
     const report = await review(context, model);
     expect(report.passes[0]?.survey).toEqual(survey);
