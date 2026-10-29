@@ -24,6 +24,23 @@ First batch, 2026-10-22: 42 sub-pull requests of pingdotgg/t3code#2829 (merged i
 
 Re-mined 2026-10-27: the first batch had kept 19 convention notes as Medium and dropped Macroscope's extra locations. Now 38 cases, 68 comments (2 critical, 21 high, 45 medium), 5 with anchors. Three of the four comments on `.ndjson` transcripts call valid JSON lines malformed; Macroscope's references are not ground truth.
 
+### Telling whether a finding is true
+
+A finding makes two claims, and they need different evidence:
+
+- **Behaviour**: in some state, the code does the wrong thing. A test settles it: `reproduced` (fails before the fix, passes after), `refuted`, or `untested`.
+- **Reachability**: a user or API client can get the code into that state. A test that constructs the state does not settle it. `shown` (an end-to-end path, or the maintainers say so), `argued_unreachable` (a named guard such as per-thread outbox serialization), or `unknown`.
+
+Sources, strongest first:
+
+1. **A maintainer's regression test**, replayed: run the test a fix commit added at the fix's parent and at the fix, in a scratch copy (never the corpus clone). Proves behaviour only.
+2. **An unprompted later fix**: the code changed weeks later on main without a reviewer comment on that line (13877:69 and 13901:151 by t3code #15323). Strong for both claims, and independent of any reviewer.
+3. **The author rejecting the comment** (13863:164: the unsandboxed retry is the point of the PR). Strong against.
+4. **A fix right after a bot comment**: weak. t3code acted on 26 of Macroscope's 32 comments, including all 9 that model judges called low value and 7 of the 10 they called incorrect.
+5. **One model judge**: weakest. On the test pilot it matched every behaviour verdict; its disagreements with the maintainers were all reachability arguments.
+
+Pilot, 2026-10-29: 10 claims backed by maintainer tests, about 10 minutes, 6 filtered installs of 3-10 s from the shared pnpm store (3.7 GB scratch copy), no model. 8 reproduced, including all 5 the judges called correct and both bugs only we found. 13883:200 was refuted, matching the judges. 13877:68, 14187:1880 and 14636:177 reproduce only in states the judges argued cannot arise, and the tests construct those states directly, so their reachability stays open.
+
 ## Original plan
 
 The main risk is building an agent that sounds insightful while drifting toward the wrong kind of review. We need to measure whether it finds the right behavioral failures, whether it can justify them, and whether it knows when to stay quiet.

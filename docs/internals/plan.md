@@ -11,7 +11,10 @@ never the target. 4 of the 5 silent unseen cases had no real bug (13725, 13887, 
 The same check corrected our labels: 14412:35 and 13879:728 are low value, 14636:7612 is
 incorrect (the outbox runs one non-title effect per thread at a time), and 13901:583 is
 Macroscope's 13901:135. Unseen precision is **9 correct, 1 low value, 1 incorrect** of 11, and
-we hold 2 of Macroscope's 9 correct comments (13863:164, 13901:135).
+we hold 2 of Macroscope's 9 correct comments (13863:164, 13901:135). Later history and
+maintainer tests weaken these verdicts (see "Telling whether a finding is true" in
+evaluation.md): 14636:7612 reproduces in a maintainer test, 14412:35 was fixed, and the author
+calls 13863:164 intended.
 
 Plain rerun (note "t3code unseen, plain rerun"; one usage-limit stop): the unchanged detector,
 once more, on the five unseen cases holding a correct Macroscope comment we missed (13877,
