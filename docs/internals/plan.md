@@ -36,8 +36,26 @@ surveyed the exact commented line and traced the normal order (tool call, then p
 of the breaking one (permission before the `task` part registers). Writing an ordering down does
 not make the detector pick the ordering that breaks.
 
-Next: ask the specific question at each changed call site, such as "what if this arrives before the
-state it reads exists?", or seed a second pass from the survey's "none" entries.
+Lifecycle questions, reverted (2026-10-29; note "t3code holdout, detector-only, low effort,
+lifecycle questions"; all 7 ran). One checklist clause asked, at every changed handler, stop,
+cleanup, recovery or restart path: what if this arrives before the state it reads exists, after it
+was replaced by a newer instance, while the scope is interrupted before cleanup registers, or after
+a concurrent change it overwrites from a stale read. Prediction ≥ 4/11 failed: **1/11 by content**
+(the Critical), against the baseline's 2/11. 4 candidates: 3 correct (2 of them bugs Macroscope
+missed: a recovered subagent's ordinal counter restarts at 100 and interleaves resumed items; the
+13879 owner-inspection bug again), 1 low value. On 13726 the survey again rated the exact commented
+line (1932, "looks up permission tool names in the asking session's active turn") "none", though
+the clause asked that very question.
+
+Three prompt variants (baseline, traced survey, lifecycle questions) and two effort levels all land
+at 1-2/11 by content with high precision. Every run looks at Macroscope's lines and finds a
+different real bug or none; no wording has changed the verdict at a commented line. Stop prompt
+changes against this set: these 7 cases are now tuned on four times and count as dev.
+
+Next: seed a second pass from the survey's "none" entries on changed lines, which tests whether a
+narrower question with one line in focus changes the verdict (doubles Codex passes), or accept that
+overlap with Macroscope undercounts us and measure precision and novel correct bugs on unseen
+t3code cases.
 
 ## Reset (2026-10-19, after a planning review with GPT-6-Astra)
 
