@@ -1,5 +1,27 @@
 # Plan of action
 
+## Precision on unseen cases (2026-10-29)
+
+Twelve one-pass t3code cases never run before, current prompt, Codex low effort, detector-only
+(note "t3code unseen, precision"; two usage-limit stops, 7 passes per window). Predictions were
+precision ≥ 70%, ≥ 3 correct bugs Macroscope missed, ≤ 2 Macroscope matches. All held:
+
+- **11 candidates, 11 correct** (9 distinct bugs; 13949 repeats 13948's two, since it shares that
+  code). 362 rests on Effect's `basicAuth` using `btoa`, which was not read locally.
+- **7 correct bugs Macroscope did not raise**, 6 of them new: a manual resume outranks queued runs
+  by ordinal (13877), recovery pools every provider's cancelled work onto one run (13901), Claude
+  wake reports survive the drain that consumed them (13948; Macroscope flagged the same pattern
+  in the ACP adapter), a mixed summary says a passing command failed (13948), the probe's
+  basic auth drops UTF-8 (14239), the manifest recommends the OpenCode 2 the driver rejects
+  (14239).
+- **2/20 Macroscope comments by content** (14412:34, 14636:177), both Medium. 5 of 12 cases had
+  no candidate.
+
+The reviewer is precise and finds bugs Macroscope does not; overlap with Macroscope measures a
+different reviewer's taste. Precision and correct bugs per case are the metrics from here. The
+open question is silence: 5 of 12 cases returned nothing, and whether those PRs hold real bugs
+is unknown.
+
 ## Holdout baseline (2026-10-27)
 
 First run on cases never tuned on: 7 one-pass t3code cases, Codex low effort, detector-only
