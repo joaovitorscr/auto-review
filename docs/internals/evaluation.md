@@ -41,6 +41,8 @@ Sources, strongest first:
 
 Pilot, 2026-10-29: 10 claims backed by maintainer tests, about 10 minutes, 6 filtered installs of 3-10 s from the shared pnpm store (3.7 GB scratch copy), no model. 8 reproduced, including all 5 the judges called correct and both bugs only we found. 13883:200 was refuted, matching the judges. 13877:68, 14187:1880 and 14636:177 reproduce only in states the judges argued cannot arise, and the tests construct those states directly, so their reachability stays open.
 
+When no maintainer fixed a finding, an agent writes the failing test at the case head instead, driving the scenario through the project's own harness rather than private state, and runs it at base. A human reads the test before trusting it. First use, 2026-10-29, on our two unfixed 13948 bugs (still on main): both reproduce through the Claude adapter's mock CLI frames, with no constructed state, and neither exists at base. One wake summary shows both bugs: `Subagent "Agent B" and subagent "Agent C" were stopped`. It names B, which an earlier continuation already drained, and gives the successful C B's outcome. It took about 5 minutes of agent time and one filtered install.
+
 ## Original plan
 
 The main risk is building an agent that sounds insightful while drifting toward the wrong kind of review. We need to measure whether it finds the right behavioral failures, whether it can justify them, and whether it knows when to stay quiet.
