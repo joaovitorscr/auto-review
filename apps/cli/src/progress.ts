@@ -118,8 +118,14 @@ export async function recordOutput(db: DatabaseSync, path: string, notes = new M
       const posted = !result.detectorOnly && (result.findings ?? []).some(same(candidate));
       insertFinding.run(runId, candidate.file, candidate.line, candidate.title, detail?.severity ?? null, detail?.confidence ?? null, posted ? 1 : 0, candidate.verdict ?? null);
     }
-    for (const comment of result.reference?.comments ?? [])
-      insertHit.run(runId, `${comment.file}:${comment.line}`, comment.severity, comment.title, comment.found ? 1 : 0);
+    // Macroscope can leave two comments on one line; later ones get a " (2)" suffix to stay distinct.
+    const seen = new Map<string, number>();
+    for (const comment of result.reference?.comments ?? []) {
+      const key = `${comment.file}:${comment.line}`;
+      const count = (seen.get(key) ?? 0) + 1;
+      seen.set(key, count);
+      insertHit.run(runId, count === 1 ? key : `${key} (${count})`, comment.severity, comment.title, comment.found ? 1 : 0);
+    }
   });
   db.exec("commit");
   return results.length;
