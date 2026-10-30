@@ -3,24 +3,24 @@
 ## Reference adjudication and a plain rerun (2026-10-29)
 
 Each of the 32 Macroscope comments on the 20 t3code holdout cases was checked against head
-(verdicts in each git-ignored `case.json` as `verdict`): **9 correct, 10 incorrect, 9 low value,
-4 not introduced**. Macroscope's precision here is about 28%, so recall of its comments was
+(verdicts in each git-ignored `case.json` as `verdict`): **10 correct, 9 incorrect, 9 low value,
+4 not introduced** (14636:177 moved to correct on 2026-10-30, below). Macroscope's precision here is about 31%, so recall of its comments was
 never the target. 4 of the 5 silent unseen cases had no real bug (13725, 13887, 14184, 14616);
 14368 has one Low. 13726:1932, the line every prompt variant rated "none", is not introduced.
 
-The same check corrected our labels: 14412:35 and 13879:728 are low value, 14636:7612 is
-incorrect (the outbox runs one non-title effect per thread at a time), and 13901:583 is
-Macroscope's 13901:135. Unseen precision is **9 correct, 1 low value, 1 incorrect** of 11, and
-we hold 2 of Macroscope's 9 correct comments (13863:164, 13901:135). Later history and
-maintainer tests weaken these verdicts (see "Telling whether a finding is true" in
-evaluation.md): 14636:7612 reproduces in a maintainer test, 14412:35 was fixed, and the author
-calls 13863:164 intended.
+The same check corrected our labels: 14412:35 and 13879:728 are low value, and 13901:583 is
+Macroscope's 13901:135. 14636:7612 was called incorrect here (the outbox runs one non-title
+effect per thread at a time), but a test on 2026-10-30 reached it through interrupt retries.
+Unseen precision is **10 correct, 1 low value** of 11, and we hold 3 of Macroscope's 10 correct
+comments (13863:164, 13901:135, 14636:177). Later history and maintainer tests weaken these
+verdicts (see "Telling whether a finding is true" in evaluation.md): 14412:35 was fixed, and the
+author calls 13863:164 intended.
 
 Plain rerun (note "t3code unseen, plain rerun"; one usage-limit stop): the unchanged detector,
 once more, on the five unseen cases holding a correct Macroscope comment we missed (13877,
 13948, 14239, 14368, 14636). Keep a union of two samples if the second recovers ≥ 2. Result:
 **1 of 5** (14636:179, Claude's interrupt with no live query). The other four findings repeat
-the first sample exactly, including the incorrect 14636:7612; 14368 stayed silent. A second
+the first sample exactly, including 14636:7612; 14368 stayed silent. A second
 low-effort sample mostly repeats the first, so the union is dropped. Missed correct bugs left:
 13877:7973, 13948:5778, 14239:3, 14368:59 (unseen), 13792:6553, 13895:905 (dev).
 
