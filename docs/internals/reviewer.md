@@ -61,11 +61,14 @@ The graph displays both assessments beneath Evidence in the collapsed Review exp
 
 ```sh
 pnpm pr review --base origin/main --head origin/feature-branch --output /tmp/review.json
-pnpm pr post /tmp/review.json 42 --dry-run   # print the GitHub review
-pnpm pr post /tmp/review.json 42             # post it
+pnpm pr verify /tmp/review.json --repo .              # prove findings, writes /tmp/review.verified.json
+pnpm pr post /tmp/review.verified.json 42 --dry-run   # print the GitHub review
+pnpm pr post /tmp/review.verified.json 42             # post it
 ```
 
-`post` runs no model. It turns a saved report's findings at `--min` severity or above (default `high`, the Phase D policy; `medium` is the other option) into one GitHub review with event `COMMENT`, one inline comment per finding on the report's head line, through `gh api` under the developer's own account. Without a pull request argument, `gh` picks the one for the current branch. Nothing is posted when no finding qualifies.
+`verify` proves findings with tests (see "Verified on real PRs" in evaluation.md). It runs the pull request's code on this machine without prompts, one finding at a time, each capped at $5. It saves after every finding and stops on an agent error, so rerunning on the `.verified.json` file continues where it stopped.
+
+`post` runs no model. It turns a verified report's `proven` findings at `--min` severity or above (default `high`, the Phase D policy; `medium` is the other option) into one GitHub review with event `COMMENT`, one inline comment per finding on the report's head line, each carrying its failing test, through `gh api` under the developer's own account. Without a pull request argument, `gh` picks the one for the current branch. Nothing is posted when no finding qualifies, which includes a report that was never verified.
 
 It refuses failed or cancelled reports, working-tree snapshots, and a report whose head is not the pull request's current head commit, since its lines would land on the wrong code. Every comment and the review body end with an `<!-- auto-review -->` marker so a later pass can tell AutoReview's comments from the developer's. Re-checking posted findings after new pushes, and recording whether each was acted on, are not built yet.
 

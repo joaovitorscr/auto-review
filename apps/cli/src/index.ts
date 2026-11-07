@@ -17,6 +17,9 @@ import { codexProvider } from "./review/codex.js";
 import { claudeProvider } from "./review/claude.js";
 import { review, renderReview } from "./review/run.js";
 import { reviewPayload } from "./review/post.js";
+import { renderVerification, verifyFinding } from "./review/verify.js";
+import type { Verification } from "./review/verify.js";
+import type { Finding } from "./review/findings.js";
 import { indexRepository } from "./repository-index.js";
 import { avatarUrl, fileDiffUrl, parseArguments, repositoryName } from "./input.js";
 
@@ -301,6 +304,42 @@ async function main(): Promise<void> {
         }
       },
     );
+    return;
+  }
+  if (args.command === "verify") {
+    const controller = new AbortController();
+    const cancel = () => {
+      if (controller.signal.aborted) process.exit(130);
+      console.error("Cancelling verification and cleaning up (press Ctrl-C again to force quit)...");
+      controller.abort(new Error("Verification cancelled."));
+    };
+    process.on("SIGINT", cancel).on("SIGTERM", cancel);
+    const source = resolve(INVOKED_FROM, args.report);
+    const destination = args.output ? resolve(INVOKED_FROM, args.output) : source.replace(/(\.verified)?\.json$/, ".verified.json");
+    const report = JSON.parse(await readFile(source, "utf8")) as {
+      status: string;
+      base: string;
+      head: string;
+      workingTreeSnapshot?: boolean;
+      findings: Array<Finding & { verification?: Verification }>;
+    };
+    if (report.status !== "complete" && report.status !== "partial") throw new Error(`Only a finished review can be verified; this report is ${report.status}.`);
+    if (report.workingTreeSnapshot) throw new Error("This report reviewed uncommitted work. Review a commit with --head first.");
+    const wanted = report.findings.filter((finding) => (args.minimum === "medium" || finding.severity !== "medium") && !finding.verification);
+    // One at a time: test runs need memory more than CPU, and a machine under pressure reads as false failures.
+    for (const [index, finding] of wanted.entries()) {
+      console.error(`Verifying ${index + 1} of ${wanted.length}: ${finding.title}`);
+      finding.verification = await verifyFinding(finding, report, {
+        repository: resolve(INVOKED_FROM, args.repository),
+        // A proof takes several installs and test runs, so it gets more time and budget than a review pass.
+        provider: (checkout) => claudeProvider({ checkout, model: args.model, tester: true, timeoutMs: 40 * 60_000, maxBudgetUsd: 5, signal: controller.signal }),
+        signal: controller.signal,
+      });
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+      console.error(`Saved ${finding.verification.verdict} result to ${destination}`);
+    }
+    process.stdout.write(renderVerification(report.findings));
     return;
   }
   if (args.command === "post") {

@@ -284,10 +284,28 @@ but 371 and 1347 are now closed as "needs a stronger model or a human". Next: Ph
 
 ## Phase D — real PRs, not fixtures
 
-Five PRs from one repo is a fixture. Post highs only on the developer's own PRs via the
-GitHub adapter, record whether each comment was acted on, and let that replace Macroscope
-overlap as the metric. Stable packing and a cheap pass count are the prerequisites; both
-exist now.
+Five PRs from one repo is a fixture. Run on the developer's own PRs and let proven findings
+replace Macroscope overlap as the metric.
+
+Changed 2026-10-30: the developer builds through coding agents and does not read the code, so
+they cannot say whether a claim is true, and a changed line proves nothing when an agent fixes
+whatever it is told to. The loop is now: review, an agent proves each high finding with a test
+(see "Verified on real PRs" in evaluation.md), only proven findings are posted, and the developer
+is asked product questions only, such as whether a service is public. The test is the fix
+agent's acceptance check. Score: findings proven, refuted and untested, and proven bugs fixed
+with the test passing. `verify` runs the proving step and `post` publishes only what it proved.
+
+Subject, developer decision 2026-10-30: open-source projects built around agentic workflows and
+pipelines for reviewing and fixing code, t3code only for now. The developer's own repositories
+are too unfinished or too quiet to measure on.
+
+First result (2026-10-31): all 11 unseen t3code findings now have evidence beyond reading, the last
+4 by agent-written tests, all reproduced (evaluation.md). `verify` now does that step.
+
+Second result (2026-10-31): `verify` proved all 3 findings from 7 fresh t3code cases, all medium, for
+$4.91. With 3 findings across 7 cases and no highs, volume is now the weaker number, and the default
+`--min high` would have posted nothing. Next: run the review at higher Codex effort on the same 7
+cases and compare findings and proofs, since the misses include a credential leak.
 
 ## Open items
 

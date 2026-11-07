@@ -4,7 +4,7 @@ import { parseReviewArguments } from "./review/input.js";
 const DEFAULT_OUTPUT = "apps/web/public/pr.json";
 
 export function usage(): string {
-  return `Usage: auto-review snapshot [number-or-url] [--output path]\n       auto-review index [repository-path] [--output path]\n       auto-review review --base ref [--head ref] [--repo path] [--agent codex|claude] [--model id] [--output report.json] [--dry-run]\n       auto-review post report.json [number-or-url] [--min high|medium] [--dry-run]\n\nReview runs Codex (default) or Claude Code against JS/TS changes. Without --head it includes uncommitted and untracked files. --dry-run writes context without invoking an agent.\n\nPost publishes a saved review report's findings at --min severity or above (default high) as one pull request review, through GitHub CLI. The report must have reviewed the pull request's current head commit. --dry-run prints the review instead of posting it.\n\nIndex writes a local Git checkout AST as JSON to stdout or --output.\n\nSnapshot fetches a pull request with GitHub CLI and writes a JSON snapshot.\nIf number-or-url is omitted, gh uses the pull request for the current branch.`;
+  return `Usage: auto-review snapshot [number-or-url] [--output path]\n       auto-review index [repository-path] [--output path]\n       auto-review review --base ref [--head ref] [--repo path] [--agent codex|claude] [--model id] [--output report.json] [--dry-run]\n       auto-review verify report.json --repo path [--min high|medium] [--model id] [--output report.json]\n       auto-review post report.json [number-or-url] [--min high|medium] [--dry-run]\n\nReview runs Codex (default) or Claude Code against JS/TS changes. Without --head it includes uncommitted and untracked files. --dry-run writes context without invoking an agent.\n\nVerify has a Claude Code agent prove each saved finding at --min severity or above (default high) with a test, one at a time, then reruns the test itself. It runs the pull request's code on this machine with no prompts, so use it only on code you trust. It saves to --output (default: beside the report, ending .verified.json) after each finding, and a rerun on that file skips finished findings.\n\nPost publishes a verified report's proven findings at --min severity or above (default high) as one pull request review, through GitHub CLI. The report must have reviewed the pull request's current head commit. --dry-run prints the review instead of posting it.\n\nIndex writes a local Git checkout AST as JSON to stdout or --output.\n\nSnapshot fetches a pull request with GitHub CLI and writes a JSON snapshot.\nIf number-or-url is omitted, gh uses the pull request for the current branch.`;
 }
 
 export function parseArguments(args: string[]) {
@@ -12,6 +12,7 @@ export function parseArguments(args: string[]) {
   const [command, ...rest] = normalizedArgs;
   if (command === "review") return parseReviewArguments(rest);
   if (command === "post") return parsePostArguments(rest);
+  if (command === "verify") return parseVerifyArguments(rest);
   if (command !== "snapshot" && command !== "index") {
     throw new Error(command ? `Unknown command: ${command}\n\n${usage()}` : usage());
   }
@@ -54,6 +55,34 @@ function parsePostArguments(args: string[]) {
   if (!report) throw new Error("post needs a saved review report: post report.json [number-or-url]");
   if (extra) throw new Error(`Unexpected argument: ${extra}`);
   return { command: "post" as const, report, target, minimum, dryRun };
+}
+
+function parseVerifyArguments(args: string[]) {
+  let report: string | undefined;
+  let repository = "";
+  let minimum: "high" | "medium" = "high";
+  let model: string | undefined;
+  let output = "";
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!;
+    if (!argument.startsWith("-")) {
+      if (report) throw new Error(`Unexpected argument: ${argument}`);
+      report = argument;
+      continue;
+    }
+    if (!["--repo", "--min", "--model", "--output", "-o"].includes(argument)) throw new Error(`Unknown verify option: ${argument}`);
+    const value = args[++index];
+    if (!value || value.startsWith("-")) throw new Error(`${argument} needs a value`);
+    if (argument === "--repo") repository = value;
+    else if (argument === "--model") model = value;
+    else if (argument === "--min") {
+      if (value !== "high" && value !== "medium") throw new Error("--min must be high or medium");
+      minimum = value;
+    } else output = value;
+  }
+  if (!report) throw new Error("verify needs a saved review report: verify report.json --repo path");
+  if (!repository) throw new Error("verify needs --repo, the repository the report reviewed");
+  return { command: "verify" as const, report, repository, minimum, model, output };
 }
 
 export function repositoryName(url: string): string {

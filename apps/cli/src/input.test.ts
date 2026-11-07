@@ -31,6 +31,18 @@ describe("post arguments", () => {
   });
 });
 
+describe("verify arguments", () => {
+  it("reads the report, repository and options", () => {
+    expect(parseArguments(["verify", "report.json", "--repo", "/repo"])).toEqual({ command: "verify", report: "report.json", repository: "/repo", minimum: "high", model: undefined, output: "" });
+    expect(parseArguments(["verify", "report.json", "--repo", "/repo", "--min", "medium", "-o", "out.json"])).toMatchObject({ minimum: "medium", output: "out.json" });
+  });
+
+  it("needs a report and the repository it reviewed", () => {
+    expect(() => parseArguments(["verify"])).toThrow("saved review report");
+    expect(() => parseArguments(["verify", "report.json"])).toThrow("--repo");
+  });
+});
+
 describe("repositoryName", () => {
   it("reads the owner and repository from a pull request URL", () => {
     expect(repositoryName("https://github.com/acme-io/acme-telemetry/pull/38")).toBe(

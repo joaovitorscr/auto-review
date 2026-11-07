@@ -4,6 +4,7 @@ import type { ModelProvider } from "./agent.js";
 /**
  * Uses the user's Claude Code login in a fresh headless session per pass.
  * Only Read, Grep and Glob are available, permission prompts are denied, and MCP servers are skipped.
+ * `tester` is for proving findings in a throwaway checkout: it can edit files and run commands unprompted.
  */
 export function claudeProvider(options: {
   checkout: string;
@@ -11,6 +12,7 @@ export function claudeProvider(options: {
   executable?: string;
   timeoutMs?: number;
   maxBudgetUsd?: number;
+  tester?: boolean;
   signal?: AbortSignal;
 }): ModelProvider {
   return {
@@ -26,18 +28,20 @@ export function claudeProvider(options: {
         "--json-schema",
         JSON.stringify(request.schema),
         "--tools",
-        "Read,Grep,Glob",
+        options.tester ? "Read,Grep,Glob,Edit,Write,Bash" : "Read,Grep,Glob",
         "--permission-mode",
-        "dontAsk",
+        options.tester ? "bypassPermissions" : "dontAsk",
         "--no-session-persistence",
         "--strict-mcp-config",
         // The default Claude Code system prompt is larger than a typical review context.
         "--system-prompt",
-        "You are AutoReview, a read-only code reviewer. Follow the task in the user message.",
+        options.tester
+          ? "You are AutoReview, testing a code review claim in a disposable checkout. Follow the task in the user message."
+          : "You are AutoReview, a read-only code reviewer. Follow the task in the user message.",
         "--model",
         options.model ?? "claude-opus-5-5",
         "--effort",
-        "low",
+        options.tester ? "medium" : "low",
         // Caps one pass so a runaway exploration cannot drain the user's plan.
         "--max-budget-usd",
         String(options.maxBudgetUsd ?? 1.5),
