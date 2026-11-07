@@ -43,6 +43,11 @@ describe("reviewPayload", () => {
     expect(reviewPayload(report({ findings: [{ ...finding("high", 1), verification: undefined }] }), "high")).toBeUndefined();
   });
 
+  it("treats a proof that forced its conditions as low", () => {
+    const findings = [finding("high", 1, { ...proven, forced: "A one-second time limit." })];
+    expect(reviewPayload(report({ findings }), "medium")).toBeUndefined();
+  });
+
   it("returns nothing when no finding qualifies", () => {
     expect(reviewPayload(report({ findings: [finding("medium", 9)] }), "high")).toBeUndefined();
   });

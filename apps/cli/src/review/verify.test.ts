@@ -16,6 +16,7 @@ const proof = {
   outcome: "reproduced",
   reason: "Adding subtracts.",
   question: "",
+  forced: "",
   setupCommand: "true",
   bugCommand: "node add.test.js bug",
   controlCommand: "node add.test.js",
@@ -68,6 +69,19 @@ describe("verifyFinding", () => {
     expect(result.testPatch).not.toContain("a + b");
   });
 
+  it("keeps the conditions a proof had to force", async () => {
+    const result = await verify({ ...proof, forced: "A one-second time limit." }, async (checkout) => {
+      await addTest(checkout);
+      await writeFile(join(checkout, "add.js"), fixed);
+    });
+    expect(result).toMatchObject({ verdict: "proven", forced: "A one-second time limit." });
+  });
+
+  it("reports a documented choice as intended without a test", async () => {
+    const result = await verify({ ...proof, outcome: "intended", testFiles: [], bugCommand: "" }, async () => {});
+    expect(result).toMatchObject({ verdict: "intended", reason: "Adding subtracts." });
+  });
+
   it("does not take the agent's word for a bug that does not fail", async () => {
     const passing = 'if (process.argv[2] === "never") throw new Error("expected 3");\n';
     const result = await verify(proof, async (checkout) => {
@@ -98,7 +112,7 @@ describe("verifyFinding", () => {
       { ...finding, verification: { verdict: "proven", reason: "It breaks.", question: "Is this service public?", agent: { durationMs: 1 } } },
       finding,
     ]);
-    expect(text).toContain("1 proven, 0 refuted, 0 untested.");
+    expect(text).toContain("1 proven, 0 refuted, 0 intended, 0 untested.");
     expect(text).toContain("- Is this service public?");
   });
 });

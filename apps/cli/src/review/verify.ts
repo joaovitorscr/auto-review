@@ -13,11 +13,12 @@ const COMMAND_LIMIT_MS = 5 * 60_000;
 export const proofSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["outcome", "reason", "question", "setupCommand", "bugCommand", "controlCommand", "expectedFailure", "testFiles"],
+  required: ["outcome", "reason", "question", "forced", "setupCommand", "bugCommand", "controlCommand", "expectedFailure", "testFiles"],
   properties: {
-    outcome: { type: "string", enum: ["reproduced", "refuted", "untested"] },
+    outcome: { type: "string", enum: ["reproduced", "refuted", "intended", "untested"] },
     reason: { type: "string" },
     question: { type: "string" },
+    forced: { type: "string" },
     setupCommand: { type: "string" },
     bugCommand: { type: "string" },
     controlCommand: { type: "string" },
@@ -27,10 +28,13 @@ export const proofSchema = {
 };
 
 export type Verification = {
-  verdict: "proven" | "refuted" | "untested";
+  /** `intended`: real behaviour the project's docs, comments or commits state as chosen; never posted. */
+  verdict: "proven" | "refuted" | "intended" | "untested";
   reason: string;
-  /** A product question for the developer, when the bug's weight depends on how the app is used. */
+  /** A product choice for the developer, when the right behaviour is theirs to decide. */
   question?: string;
+  /** Conditions the bug case needed that real users would not meet; set, the finding is low. */
+  forced?: string;
   /** The fix agent's acceptance check: `bugCommand` passes once the bug is fixed. */
   test?: {
     files: Array<{ path: string; content: string }>;
@@ -55,7 +59,7 @@ const text = (value: unknown) => {
 
 export function parseProof(value: unknown) {
   const proof = object(value);
-  if (proof.outcome !== "reproduced" && proof.outcome !== "refuted" && proof.outcome !== "untested")
+  if (proof.outcome !== "reproduced" && proof.outcome !== "refuted" && proof.outcome !== "intended" && proof.outcome !== "untested")
     throw new Error("Invalid outcome from the agent");
   if (!Array.isArray(proof.testFiles)) throw new Error("Invalid test files from the agent");
   const testFiles = proof.testFiles.map(text);
@@ -65,6 +69,7 @@ export function parseProof(value: unknown) {
     outcome: proof.outcome,
     reason: text(proof.reason),
     question: text(proof.question),
+    forced: text(proof.forced),
     setupCommand: text(proof.setupCommand),
     bugCommand: text(proof.bugCommand),
     controlCommand: text(proof.controlCommand),
@@ -82,17 +87,21 @@ Explanation: ${finding.explanation}
 Scenario: ${finding.scenario}
 Suggested fix: ${finding.suggestedFix}
 
-Install what you need, then write a test that follows these rules:
+First learn what the pull request means to do: read its commit messages (\`git log ${base}..${head}\`), and the comments and documentation (docs/ and README files) that cover the changed code. If they state the claimed behaviour as deliberate or as an accepted exception, report "intended" without writing a test.
+
+Otherwise install what you need, then write a test that follows these rules:
 - Drive the scenario through the application's real entry points and the project's own test harness. Do not construct private state the application could not reach.
 - Put two named cases in it: the bug case, which asserts the correct behaviour and so fails while the bug exists, and a control, a nearby working path that passes now.
 - If the bug case fails, make the smallest source change that fixes the bug and leave it in place. It must pass with that change. Do not change test files to make it pass.
+- With your fix in place, look at what a user now gets (the output, message or saved data) and check it is what the pull request set out to deliver, not only that the test passes. If every fix brings back what the change set out to remove, the behaviour is the change's intent: report "intended".
 - If the bug case passes, the claim is refuted only if the test shows the scenario really ran, for example by also asserting what the code did on the way. A test that passes because it never reached the code proves nothing, so fix the test.
 - Do not push, open pull requests, or change anything outside this checkout.
 
 Report:
-- outcome: "reproduced" if the bug case failed and your change fixed it, "refuted" if it passed having really run the scenario, otherwise "untested".
-- reason: one or two plain sentences on what happens, for someone who does not read code.
-- question: a question about the product, not the code, if the bug's weight depends on how the app is used, such as whether a service is public. Otherwise "".
+- outcome: "reproduced" if the bug case failed and your change fixed it, "refuted" if it passed having really run the scenario, "intended" if the project states the behaviour as chosen, otherwise "untested".
+- reason: one or two plain sentences on what a user of the product sees, for someone who does not read code. For "intended", name the file and line that states the choice. No first person, and no test details such as fixtures, file names or runtime versions.
+- question: when the right behaviour is a product choice the code cannot settle, such as a fix that changes a rule the product follows, ask it as a choice between outcomes a user would see ("Should X happen, or Y?"). Never ask how often something happens. Otherwise "".
+- forced: in plain words, any condition the bug case needed that real users would not meet, such as a time limit shortened for the test or input beyond a format's documented limit. "" when the scenario is one real users reach as tested.
 - setupCommand: the command that installs dependencies, safe to run again.
 - bugCommand and controlCommand: shell commands from the checkout root that run only that case, without watch mode.
 - expectedFailure: a short, single-line piece of the assertion error the bug case prints when it fails. Not the test's name. AutoReview runs your commands with CI=true and NO_COLOR=1, where test runners may shorten long values, so copy it from a run with those set and prefer a short value such as the expected one.
@@ -162,6 +171,7 @@ async function verifyInCheckout(
   const agent = { durationMs: response.durationMs, model: response.model, turns: response.turns, usage: response.usage };
   const untested = (reason: string): Verification => ({ verdict: "untested", reason, agent, ...(proof.question && { question: proof.question }) });
   if (proof.outcome === "untested") return untested(proof.reason);
+  if (proof.outcome === "intended") return { verdict: "intended", reason: proof.reason, agent, ...(proof.question && { question: proof.question }) };
   if (!proof.testFiles.length || !proof.bugCommand) return untested(`The agent reported no test: ${proof.reason}`);
 
   let files: Array<{ path: string; content: string }>;
@@ -212,6 +222,7 @@ async function verifyInCheckout(
     verdict: "proven",
     reason: proof.reason,
     ...(proof.question && { question: proof.question }),
+    ...(proof.forced && { forced: proof.forced }),
     test,
     fixPatch,
     testPatch,
@@ -244,10 +255,10 @@ export async function verifyFinding(
 export function renderVerification(findings: ReadonlyArray<Finding & { verification?: Verification }>) {
   const checked = findings.filter((finding) => finding.verification);
   const count = (verdict: Verification["verdict"]) => checked.filter((finding) => finding.verification!.verdict === verdict).length;
-  const lines = [`# AutoReview verification`, "", `${count("proven")} proven, ${count("refuted")} refuted, ${count("untested")} untested.`, ""];
+  const lines = [`# AutoReview verification`, "", `${count("proven")} proven, ${count("refuted")} refuted, ${count("intended")} intended, ${count("untested")} untested.`, ""];
   for (const finding of checked)
     lines.push(`- ${finding.verification!.verdict}: ${finding.title} (\`${finding.file}:${finding.line}\`). ${finding.verification!.reason}`);
   const questions = checked.flatMap((finding) => finding.verification!.question ?? []);
-  if (questions.length) lines.push("", "Questions for you:", ...questions.map((question) => `- ${question}`));
+  if (questions.length) lines.push("", "Decisions for you:", ...questions.map((question) => `- ${question}`));
   return `${lines.join("\n")}\n`;
 }

@@ -6,6 +6,9 @@ type VerifiedFinding = Report["findings"][number] & { verification?: Verificatio
 
 const rank = { critical: 0, high: 1, medium: 2, low: 3 };
 
+// A proof that needed conditions real users do not meet makes the finding low, whatever the reviewer said.
+const severity = (finding: VerifiedFinding) => (finding.verification?.forced ? "low" : finding.severity);
+
 // Marks comments AutoReview posted, so a later pass can find them among the developer's own comments.
 export const POSTED_MARKER = "<!-- auto-review -->";
 
@@ -27,7 +30,7 @@ export function reviewPayload(report: Omit<Report, "findings"> & { findings: Ver
     throw new Error(`Only a finished review can be posted; this report is ${String(report.status)}.`);
   if (report.workingTreeSnapshot)
     throw new Error("This report reviewed uncommitted work. Push it and review the pull request head with --head.");
-  const posted = report.findings.filter((finding) => finding.verification?.verdict === "proven" && rank[finding.severity] <= rank[minimum]);
+  const posted = report.findings.filter((finding) => finding.verification?.verdict === "proven" && rank[severity(finding)] <= rank[minimum]);
   if (!posted.length) return undefined;
   return {
     commit_id: report.head,
@@ -38,7 +41,7 @@ export function reviewPayload(report: Omit<Report, "findings"> & { findings: Ver
       line: finding.line,
       side: "RIGHT" as const,
       body: [
-        `**${finding.severity}: ${finding.title}**`,
+        `**${severity(finding)}: ${finding.title}**`,
         finding.explanation,
         `**Scenario:** ${finding.scenario}`,
         `**Suggested fix:** ${finding.suggestedFix}`,
