@@ -85,6 +85,8 @@ describe("review inputs and diff ranges", () => {
       "--agent must be codex or claude",
     );
     expect(() => parseArguments(["review", "--base", "--head"])).toThrow("needs a value");
+    expect(parseArguments(["review", "--pr", "21", "--repo", "/repo"])).toMatchObject({ pullRequest: "21", base: "", repository: "/repo" });
+    expect(() => parseArguments(["review", "--pr", "21", "--base", "main"])).toThrow("drop --base and --head");
     expect(() => parseArguments(["review", "--base", "main", "--bogus"])).toThrow(
       "Unknown review option",
     );

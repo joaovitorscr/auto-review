@@ -237,6 +237,18 @@ async function fetchPullRequest(target?: string): Promise<PullRequestSnapshot> {
   };
 }
 
+/**
+ * Fetches a pull request's base and head commits into `repository`, so a review covers exactly what
+ * GitHub shows, including a pull request stacked on another branch. Creates no local branches.
+ */
+async function fetchPullRequestCommits(repository: string, target: string) {
+  const { stdout } = await exec("gh", ["pr", "view", target, "--json", "url,number,baseRefName,baseRefOid,headRefName,headRefOid"], { cwd: repository });
+  const pullRequest = JSON.parse(stdout) as { url: string; number: number; baseRefName: string; baseRefOid: string; headRefName: string; headRefOid: string };
+  const remote = `${pullRequest.url.replace(/\/pull\/\d+$/, "")}.git`;
+  await exec("git", ["-C", repository, "fetch", "--quiet", "--no-tags", remote, `refs/heads/${pullRequest.baseRefName}`, `refs/pull/${pullRequest.number}/head`]);
+  return pullRequest;
+}
+
 async function main(): Promise<void> {
   const args = parseArguments(process.argv.slice(2));
   if (args.command === "review") {
@@ -247,12 +259,15 @@ async function main(): Promise<void> {
       controller.abort(new Error("Review cancelled."));
     };
     process.on("SIGINT", cancel).on("SIGTERM", cancel);
+    const repository = resolve(INVOKED_FROM, args.repository);
+    const pullRequest = args.pullRequest ? await fetchPullRequestCommits(repository, args.pullRequest) : undefined;
+    if (pullRequest) console.error(`Reviewing ${pullRequest.url}: ${pullRequest.headRefName} into ${pullRequest.baseRefName}`);
     console.error("Building review context...");
     await withReviewContext(
       {
-        repository: resolve(INVOKED_FROM, args.repository),
-        base: args.base,
-        head: args.head,
+        repository,
+        base: pullRequest?.baseRefOid ?? args.base,
+        head: pullRequest?.headRefOid ?? args.head,
         signal: controller.signal,
       },
       async (context, checkout) => {
@@ -283,7 +298,7 @@ async function main(): Promise<void> {
             agent({ checkout, model: args.model, signal: controller.signal }),
             { onProgress: (message) => console.error(message), checkout },
           );
-          await save({ ...result, provider }, "review report");
+          await save({ ...result, provider, ...(pullRequest && { pullRequest: pullRequest.url }) }, "review report");
           process.stdout.write(renderReview(result));
         } catch (error) {
           const cancelled = controller.signal.aborted;
@@ -343,12 +358,15 @@ async function main(): Promise<void> {
     return;
   }
   if (args.command === "post") {
-    const payload = reviewPayload(JSON.parse(await readFile(resolve(INVOKED_FROM, args.report), "utf8")), args.minimum);
+    const report = JSON.parse(await readFile(resolve(INVOKED_FROM, args.report), "utf8"));
+    const payload = reviewPayload(report, args.minimum);
     if (!payload) {
       console.error(`No findings at ${args.minimum} severity or above; nothing to post.`);
       return;
     }
-    const { stdout } = await exec("gh", ["pr", "view", ...(args.target ? [args.target] : []), "--json", "number,url,headRefOid"]);
+    // A report made with `review --pr` names its pull request, so it never lands on another repository's.
+    const target = args.target ?? (report as { pullRequest?: string }).pullRequest;
+    const { stdout } = await exec("gh", ["pr", "view", ...(target ? [target] : []), "--json", "number,url,headRefOid"]);
     const pullRequest = JSON.parse(stdout) as { number: number; url: string; headRefOid: string };
     // Report lines belong to the reviewed commit; on any other head GitHub would misplace or reject them.
     if (pullRequest.headRefOid !== payload.commit_id)

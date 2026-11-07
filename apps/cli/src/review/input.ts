@@ -6,6 +6,7 @@ export function parseReviewArguments(args: string[]) {
   let model: string | undefined;
   let output = "";
   let dryRun = false;
+  let pullRequest: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index];
     if (option === "--dry-run") {
@@ -13,7 +14,7 @@ export function parseReviewArguments(args: string[]) {
       continue;
     }
     if (
-      !["--base", "--head", "--repo", "--agent", "--model", "--output", "-o"].includes(option ?? "")
+      !["--base", "--head", "--pr", "--repo", "--agent", "--model", "--output", "-o"].includes(option ?? "")
     )
       throw new Error(`Unknown review option: ${option}`);
     const value = args[++index];
@@ -24,6 +25,9 @@ export function parseReviewArguments(args: string[]) {
         break;
       case "--head":
         head = value;
+        break;
+      case "--pr":
+        pullRequest = value;
         break;
       case "--repo":
         repository = value;
@@ -40,9 +44,11 @@ export function parseReviewArguments(args: string[]) {
         output = value;
     }
   }
-  if (!base)
+  if (pullRequest && (base || head))
+    throw new Error("--pr reads the base and head from the pull request; drop --base and --head.");
+  if (!base && !pullRequest)
     throw new Error(
-      "review requires --base <branch-or-commit>. It reviews changes from the merge base to --head, or to a snapshot of the working tree (HEAD plus uncommitted and untracked files) when --head is omitted.",
+      "review requires --pr <number-or-url> or --base <branch-or-commit>. It reviews changes from the merge base to --head, or to a snapshot of the working tree (HEAD plus uncommitted and untracked files) when --head is omitted.",
     );
-  return { command: "review" as const, base, head, repository, agent, model, output, dryRun };
+  return { command: "review" as const, base, head, pullRequest, repository, agent, model, output, dryRun };
 }

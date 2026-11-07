@@ -60,11 +60,13 @@ The graph displays both assessments beneath Evidence in the collapsed Review exp
 ## Posting to a pull request
 
 ```sh
-pnpm pr review --base origin/main --head origin/feature-branch --output /tmp/review.json
-pnpm pr verify /tmp/review.json --repo .              # prove findings, writes /tmp/review.verified.json
-pnpm pr post /tmp/review.verified.json 42 --dry-run   # print the GitHub review
-pnpm pr post /tmp/review.verified.json 42             # post it
+pnpm pr review --pr 42 --repo ../app --output /tmp/review.json
+pnpm pr verify /tmp/review.json --repo ../app      # prove findings, writes /tmp/review.verified.json
+pnpm pr post /tmp/review.verified.json --dry-run   # print the GitHub review
+pnpm pr post /tmp/review.verified.json             # post it to pull request 42
 ```
+
+`review --pr` asks GitHub for the pull request's base and head and fetches both into `--repo` without making branches, so a pull request stacked on another branch is reviewed against that branch, not `main`. The report records the pull request, and `post` posts there unless given another. `--base` and `--head` still review any two refs.
 
 `verify` proves findings with tests (see "Verified on real PRs" in evaluation.md). It runs the pull request's code on this machine without prompts, one finding at a time, each capped at $5. It saves after every finding and stops on an agent error, so rerunning on the `.verified.json` file continues where it stopped.
 
