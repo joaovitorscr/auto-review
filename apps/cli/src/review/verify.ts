@@ -95,7 +95,7 @@ Report:
 - question: a question about the product, not the code, if the bug's weight depends on how the app is used, such as whether a service is public. Otherwise "".
 - setupCommand: the command that installs dependencies, safe to run again.
 - bugCommand and controlCommand: shell commands from the checkout root that run only that case, without watch mode.
-- expectedFailure: a short, single-line piece of the assertion error the bug case prints when it fails. Not the test's name.
+- expectedFailure: a short, single-line piece of the assertion error the bug case prints when it fails. Not the test's name. AutoReview runs your commands with CI=true and NO_COLOR=1, where test runners may shorten long values, so copy it from a run with those set and prefer a short value such as the expected one.
 - testFiles: every file holding test code, relative to the checkout root, plus every file you added or changed only so the test can run, such as a test runner added to package.json, its lockfile and its config. AutoReview rebuilds the checkout from these files alone. Your source fix must not be in these files.
 For "untested", leave the commands empty if you have none. AutoReview reruns everything itself.`;
 }
