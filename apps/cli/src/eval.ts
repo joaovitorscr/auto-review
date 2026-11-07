@@ -124,7 +124,7 @@ async function buildRepository(directory: string, name: string) {
 }
 
 async function main() {
-  const options = parse(process.argv.slice(2));
+  const options = parse(process.argv.slice(2).filter((argument) => argument !== "--"));
   const cases: Array<{ name: string; directory: string }> = [];
   for (const root of CASE_ROOTS) {
     const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
