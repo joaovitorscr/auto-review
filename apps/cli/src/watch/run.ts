@@ -5,7 +5,8 @@ import { promisify } from "node:util";
 import { claudeProvider } from "../review/claude.js";
 import { codexProvider } from "../review/codex.js";
 import { withReviewContext } from "../review/git.js";
-import { POSTED_MARKER, reviewPayload, signed } from "../review/post.js";
+import { atLeast, POSTED_MARKER, reviewPayload, signed } from "../review/post.js";
+import type { Minimum } from "../review/post.js";
 import { review } from "../review/run.js";
 import {
   prover,
@@ -25,14 +26,12 @@ import {
   REFUSAL,
   replyPrompt,
   replySchema,
-  reviewedMessage,
   withoutOpenThreads,
 } from "./plan.js";
 import type { Comment, WatchState } from "./plan.js";
 
 const exec = promisify(execFile);
 const POLL_MS = 60_000;
-const rank = { critical: 0, high: 1, medium: 2, low: 3 };
 
 const pause = (ms: number, signal: AbortSignal) =>
   new Promise<void>((done) => {
@@ -60,7 +59,7 @@ export async function watch(options: {
   repository: string;
   agent: "codex" | "claude";
   model?: string;
-  minimum: "high" | "medium";
+  minimum: Minimum;
   dryRun: boolean;
   workspaceRoot: string;
   signal: AbortSignal;
@@ -152,8 +151,8 @@ export async function watch(options: {
     // The report keeps every finding; only new ones at --min or above are proven, and so can be posted.
     const findings: Array<(typeof report.findings)[number] & { verification?: Verification }> =
       report.findings;
-    const toProve = withoutOpenThreads(findings, threads).filter(
-      (finding) => rank[finding.severity] <= rank[options.minimum],
+    const toProve = withoutOpenThreads(findings, threads).filter((finding) =>
+      atLeast(finding, options.minimum),
     );
     const verified = {
       ...report,
@@ -188,33 +187,26 @@ export async function watch(options: {
     }
     log(`Saved the report to ${reportPath}`);
 
-    const payload = reviewPayload(verified, options.minimum);
-    if (payload) {
-      // Report lines belong to the reviewed commit; on any other head GitHub would misplace them.
-      if ((await github.pullRequest(pr.url)).headRefOid !== head)
-        return log("The pull request moved during the review; the next pass reviews its new head.");
-      const { posted, ...body } = payload;
-      const ids = await github.postReview(pr, body);
-      for (const [index, finding] of posted.entries()) {
-        const rootId = ids[index];
-        const proof = savedProof(finding.verification);
-        if (rootId)
-          state.threads.push({
-            rootId,
-            file: finding.file,
-            title: finding.title,
-            ...(proof && { proof }),
-          });
-      }
-      log(`Posted ${posted.length} finding(s).`);
+    // The review is the answer to a push or a /auto-review alike, so it is posted even when clean.
+    const { posted, ...body } = reviewPayload(verified, options.minimum);
+    // Report lines belong to the reviewed commit; on any other head GitHub would misplace them.
+    if ((await github.pullRequest(pr.url)).headRefOid !== head)
+      return log("The pull request moved during the review; the next pass reviews its new head.");
+    const ids = await github.postReview(pr, body);
+    for (const [index, finding] of posted.entries()) {
+      const rootId = ids[index];
+      const proof = savedProof(finding.verification);
+      if (rootId)
+        state.threads.push({
+          rootId,
+          file: finding.file,
+          title: finding.title,
+          ...(proof && { proof }),
+        });
     }
+    log(`Posted the review with ${posted.length} finding(s).`);
     state.reviewedHead = head;
     await save();
-    if (command)
-      await github.replyInConversation(
-        pr,
-        signed(reviewedMessage(head, options.minimum, payload?.posted.length ?? 0)),
-      );
   }
 
   async function answer(root: Comment, reply: Comment, comments: Comment[]) {

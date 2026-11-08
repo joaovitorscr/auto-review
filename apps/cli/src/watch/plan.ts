@@ -171,7 +171,3 @@ Rules:
 
 export const fixedMessage = (head: string, proof: SavedProof) =>
   `Fixed in ${head.slice(0, 10)}: \`${proof.bugCommand}\` now passes.`;
-export const reviewedMessage = (head: string, minimum: string, posted: number) =>
-  posted
-    ? `Reviewed ${head.slice(0, 10)} and posted ${posted} proven finding(s) at ${minimum} severity or above.`
-    : `Reviewed ${head.slice(0, 10)}: no new proven findings at ${minimum} severity or above.`;

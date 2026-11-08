@@ -1,10 +1,12 @@
 import { createHash } from "node:crypto";
 import { parseReviewArguments } from "./review/input.js";
+import { isMinimum } from "./review/post.js";
+import type { Minimum } from "./review/post.js";
 
 const DEFAULT_OUTPUT = "apps/web/public/pr.json";
 
 export function usage(): string {
-  return `Usage: auto-review snapshot [number-or-url] [--output path]\n       auto-review index [repository-path] [--output path]\n       auto-review review (--pr number-or-url | --base ref [--head ref]) [--repo path] [--agent codex|claude] [--model id] [--output report.json] [--dry-run]\n       auto-review verify report.json --repo path [--min high|medium] [--model id] [--output report.json]\n       auto-review post report.json [number-or-url] [--min high|medium] [--dry-run]\n       auto-review watch number-or-url --repo path [--agent codex|claude] [--model id] [--min high|medium] [--dry-run]\n\nReview runs Codex (default) or Claude Code against JS/TS changes. --pr fetches that pull request's base and head into --repo and reviews exactly that, and post then knows where to post. Without --pr or --head it includes uncommitted and untracked files. --dry-run writes context without invoking an agent.\n\nVerify has a Claude Code agent prove each saved finding at --min severity or above (default high) with a test, one at a time, then reruns the test itself. It runs the pull request's code on this machine with no prompts, so use it only on code you trust. It saves to --output (default: beside the report, ending .verified.json) after each finding, and a rerun on that file skips finished findings.\n\nPost publishes a verified report's proven findings at --min severity or above (default high) as one pull request review, through GitHub CLI. Without number-or-url it posts to the pull request the report reviewed with --pr, else the current branch's. The report must have reviewed the pull request's current head commit. --dry-run prints the review instead of posting it.\n\nWatch keeps one pull request reviewed from this machine until it closes, checking it every minute. On each push it reruns the tests behind open findings and resolves the threads they now pass on, then reviews the new commits, proves findings as verify does and posts them as post does. It answers replies on its threads, and a conversation comment starting with /auto-review runs a full review. Only you and people with write access can trigger it; others get a refusal. Pushes are reviewed unprompted only when the pull request's author has write access, because proving runs the pull request's code here. --repo is a local clone of the repository. --dry-run prints one pass's decisions without running an agent or posting.\n\nIndex writes a local Git checkout AST as JSON to stdout or --output.\n\nSnapshot fetches a pull request with GitHub CLI and writes a JSON snapshot.\nIf number-or-url is omitted, gh uses the pull request for the current branch.`;
+  return `Usage: auto-review snapshot [number-or-url] [--output path]\n       auto-review index [repository-path] [--output path]\n       auto-review review (--pr number-or-url | --base ref [--head ref]) [--repo path] [--agent codex|claude] [--model id] [--output report.json] [--dry-run]\n       auto-review verify report.json --repo path [--min high|medium|low] [--model id] [--output report.json]\n       auto-review post report.json [number-or-url] [--min high|medium|low] [--dry-run]\n       auto-review watch number-or-url --repo path [--agent codex|claude] [--model id] [--min high|medium|low] [--dry-run]\n\nReview runs Codex (default) or Claude Code against JS/TS changes. --pr fetches that pull request's base and head into --repo and reviews exactly that, and post then knows where to post. Without --pr or --head it includes uncommitted and untracked files. --dry-run writes context without invoking an agent.\n\nVerify has a Claude Code agent prove each saved finding at --min severity or above (default low, so every finding) with a test, one at a time, then reruns the test itself. It runs the pull request's code on this machine with no prompts, so use it only on code you trust. It saves to --output (default: beside the report, ending .verified.json) after each finding, and a rerun on that file skips finished findings.\n\nPost publishes a verified report as one pull request review, through GitHub CLI: an inline comment for every finding at --min severity or above (default low), proven ones with their failing test and the rest marked not proven, except findings a test refuted or the project states as deliberate. The review body always says what was reviewed, so a clean review is posted too. Without number-or-url it posts to the pull request the report reviewed with --pr, else the current branch's. The report must have reviewed the pull request's current head commit. --dry-run prints the review instead of posting it.\n\nWatch keeps one pull request reviewed from this machine until it closes, checking it every minute. On each push it reruns the tests behind open findings and resolves the threads they now pass on, then reviews the new commits, proves every finding as verify does and posts the review as post does. It answers replies on its threads, and a conversation comment starting with /auto-review runs a full review. Only you and people with write access can trigger it; others get a refusal. Pushes are reviewed unprompted only when the pull request's author has write access, because proving runs the pull request's code here. --repo is a local clone of the repository. --dry-run prints one pass's decisions without running an agent or posting.\n\nIndex writes a local Git checkout AST as JSON to stdout or --output.\n\nSnapshot fetches a pull request with GitHub CLI and writes a JSON snapshot.\nIf number-or-url is omitted, gh uses the pull request for the current branch.`;
 }
 
 export function parseArguments(args: string[]) {
@@ -40,14 +42,14 @@ export function parseArguments(args: string[]) {
 
 function parsePostArguments(args: string[]) {
   const positional: string[] = [];
-  let minimum: "high" | "medium" = "high";
+  let minimum: Minimum = "low";
   let dryRun = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]!;
     if (argument === "--dry-run") dryRun = true;
     else if (argument === "--min") {
       const value = args[++index];
-      if (value !== "high" && value !== "medium") throw new Error("--min must be high or medium");
+      if (!isMinimum(value)) throw new Error("--min must be high, medium or low");
       minimum = value;
     } else if (argument.startsWith("-")) throw new Error(`Unknown post option: ${argument}`);
     else positional.push(argument);
@@ -61,7 +63,7 @@ function parsePostArguments(args: string[]) {
 function parseVerifyArguments(args: string[]) {
   let report: string | undefined;
   let repository = "";
-  let minimum: "high" | "medium" = "high";
+  let minimum: Minimum = "low";
   let model: string | undefined;
   let output = "";
   for (let index = 0; index < args.length; index += 1) {
@@ -77,7 +79,7 @@ function parseVerifyArguments(args: string[]) {
     if (argument === "--repo") repository = value;
     else if (argument === "--model") model = value;
     else if (argument === "--min") {
-      if (value !== "high" && value !== "medium") throw new Error("--min must be high or medium");
+      if (!isMinimum(value)) throw new Error("--min must be high, medium or low");
       minimum = value;
     } else output = value;
   }
@@ -91,7 +93,7 @@ function parseWatchArguments(args: string[]) {
   let repository = ".";
   let agent: "codex" | "claude" = "codex";
   let model: string | undefined;
-  let minimum: "high" | "medium" = "high";
+  let minimum: Minimum = "low";
   let dryRun = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]!;
@@ -113,7 +115,7 @@ function parseWatchArguments(args: string[]) {
       if (value !== "codex" && value !== "claude") throw new Error(`--agent must be codex or claude, not ${value}`);
       agent = value;
     } else {
-      if (value !== "high" && value !== "medium") throw new Error("--min must be high or medium");
+      if (!isMinimum(value)) throw new Error("--min must be high, medium or low");
       minimum = value;
     }
   }

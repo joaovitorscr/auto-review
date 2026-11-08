@@ -15,7 +15,7 @@ import { withReviewContext } from "./review/git.js";
 import { codexProvider } from "./review/codex.js";
 import { claudeProvider } from "./review/claude.js";
 import { review, renderReview } from "./review/run.js";
-import { reviewPayload } from "./review/post.js";
+import { atLeast, reviewPayload } from "./review/post.js";
 import { prover, renderVerification, verifyFinding } from "./review/verify.js";
 import type { Verification } from "./review/verify.js";
 import type { Finding } from "./review/findings.js";
@@ -330,7 +330,7 @@ async function main(): Promise<void> {
     };
     if (report.status !== "complete" && report.status !== "partial") throw new Error(`Only a finished review can be verified; this report is ${report.status}.`);
     if (report.workingTreeSnapshot) throw new Error("This report reviewed uncommitted work. Review a commit with --head first.");
-    const wanted = report.findings.filter((finding) => (args.minimum === "medium" || finding.severity !== "medium") && !finding.verification);
+    const wanted = report.findings.filter((finding) => atLeast(finding, args.minimum) && !finding.verification);
     // One at a time: test runs need memory more than CPU, and a machine under pressure reads as false failures.
     for (const [index, finding] of wanted.entries()) {
       console.error(`Verifying ${index + 1} of ${wanted.length}: ${finding.title}`);
@@ -360,10 +360,6 @@ async function main(): Promise<void> {
   if (args.command === "post") {
     const report = JSON.parse(await readFile(resolve(INVOKED_FROM, args.report), "utf8"));
     const payload = reviewPayload(report, args.minimum);
-    if (!payload) {
-      console.error(`No findings at ${args.minimum} severity or above; nothing to post.`);
-      return;
-    }
     // A report made with `review --pr` names its pull request, so it never lands on another repository's.
     const target = args.target ?? (report as { pullRequest?: string }).pullRequest;
     const pullRequest = await github.pullRequest(target);
