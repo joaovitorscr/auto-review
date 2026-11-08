@@ -149,10 +149,12 @@ export async function watch(options: {
       (comment) =>
         !comment.inReplyTo && comment.body.includes(POSTED_MARKER) && !fixed.has(comment.id),
     );
+    // The report keeps every finding; only new ones at --min or above are proven, and so can be posted.
     const findings: Array<(typeof report.findings)[number] & { verification?: Verification }> =
-      withoutOpenThreads(report.findings, threads).filter(
-        (finding) => rank[finding.severity] <= rank[options.minimum],
-      );
+      report.findings;
+    const toProve = withoutOpenThreads(findings, threads).filter(
+      (finding) => rank[finding.severity] <= rank[options.minimum],
+    );
     const verified = {
       ...report,
       findings,
@@ -170,8 +172,12 @@ export async function watch(options: {
       await writeFile(reportPath, `${JSON.stringify(verified, null, 2)}\n`, "utf8");
     };
     await saveReport();
-    for (const [index, finding] of findings.entries()) {
-      log(`Proving ${index + 1} of ${findings.length}: ${finding.title}`);
+    if (findings.length > toProve.length)
+      log(
+        `${findings.length - toProve.length} finding(s) below ${options.minimum} or already open; not proving them.`,
+      );
+    for (const [index, finding] of toProve.entries()) {
+      log(`Proving ${index + 1} of ${toProve.length}: ${finding.title}`);
       finding.verification = await verifyFinding(finding, report, {
         repository,
         provider: prover(options.model, signal),
