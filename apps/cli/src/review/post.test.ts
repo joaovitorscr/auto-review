@@ -29,7 +29,8 @@ describe("reviewPayload", () => {
     expect(payload.commit_id).toBe("abc123");
     expect(payload.comments.map((comment) => comment.line)).toEqual([2, 4]);
     expect(payload.comments[0]).toMatchObject({ path: "src/amount.ts", side: "RIGHT" });
-    expect(payload.comments[0]!.body).toContain("**critical: critical bug**");
+    expect(payload.comments[0]!.body.startsWith("🔴 **Critical** `src/amount.ts:2`\n\n**critical bug**")).toBe(true);
+    expect(payload.comments[1]!.body.startsWith("🟠 **High** `src/amount.ts:4`")).toBe(true);
     expect(payload.comments[0]!.body).toContain(POSTED_MARKER);
     expect(reviewPayload(report(), "medium")!.comments).toHaveLength(3);
   });
@@ -41,6 +42,14 @@ describe("reviewPayload", () => {
     expect(payload.comments[0]!.body).toContain("`vitest a` fails at this commit");
     expect(payload.comments[0]!.body).toContain("it('fails')");
     expect(reviewPayload(report({ findings: [{ ...finding("high", 1), verification: undefined }] }), "high")).toBeUndefined();
+  });
+
+  it("folds the test and a prompt for the developer's agent, which is done when the test passes", () => {
+    const body = reviewPayload(report(), "high")!.comments[0]!.body;
+    expect(body).toContain("<summary>🧪 Failing test</summary>");
+    expect(body).toContain("<summary>🤖 Prompt for your coding agent</summary>");
+    expect(body).toContain("In file @src/amount.ts around line 2:");
+    expect(body).toContain("Done when `vitest a` passes; it fails now with `expected 3`.");
   });
 
   it("treats a proof that forced its conditions as low", () => {

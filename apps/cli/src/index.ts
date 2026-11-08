@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type {
@@ -17,10 +16,12 @@ import { codexProvider } from "./review/codex.js";
 import { claudeProvider } from "./review/claude.js";
 import { review, renderReview } from "./review/run.js";
 import { reviewPayload } from "./review/post.js";
-import { renderVerification, verifyFinding } from "./review/verify.js";
+import { prover, renderVerification, verifyFinding } from "./review/verify.js";
 import type { Verification } from "./review/verify.js";
 import type { Finding } from "./review/findings.js";
 import { indexRepository } from "./repository-index.js";
+import * as github from "./watch/github.js";
+import { watch } from "./watch/run.js";
 import { avatarUrl, fileDiffUrl, parseArguments, repositoryName } from "./input.js";
 
 const exec = promisify(execFile);
@@ -237,18 +238,6 @@ async function fetchPullRequest(target?: string): Promise<PullRequestSnapshot> {
   };
 }
 
-/**
- * Fetches a pull request's base and head commits into `repository`, so a review covers exactly what
- * GitHub shows, including a pull request stacked on another branch. Creates no local branches.
- */
-async function fetchPullRequestCommits(repository: string, target: string) {
-  const { stdout } = await exec("gh", ["pr", "view", target, "--json", "url,number,baseRefName,baseRefOid,headRefName,headRefOid"], { cwd: repository });
-  const pullRequest = JSON.parse(stdout) as { url: string; number: number; baseRefName: string; baseRefOid: string; headRefName: string; headRefOid: string };
-  const remote = `${pullRequest.url.replace(/\/pull\/\d+$/, "")}.git`;
-  await exec("git", ["-C", repository, "fetch", "--quiet", "--no-tags", remote, `refs/heads/${pullRequest.baseRefName}`, `refs/pull/${pullRequest.number}/head`]);
-  return pullRequest;
-}
-
 async function main(): Promise<void> {
   const args = parseArguments(process.argv.slice(2));
   if (args.command === "review") {
@@ -260,7 +249,8 @@ async function main(): Promise<void> {
     };
     process.on("SIGINT", cancel).on("SIGTERM", cancel);
     const repository = resolve(INVOKED_FROM, args.repository);
-    const pullRequest = args.pullRequest ? await fetchPullRequestCommits(repository, args.pullRequest) : undefined;
+    const pullRequest = args.pullRequest ? await github.pullRequest(args.pullRequest, repository) : undefined;
+    if (pullRequest) await github.fetchCommits(repository, pullRequest);
     if (pullRequest) console.error(`Reviewing ${pullRequest.url}: ${pullRequest.headRefName} into ${pullRequest.baseRefName}`);
     console.error("Building review context...");
     await withReviewContext(
@@ -346,8 +336,7 @@ async function main(): Promise<void> {
       console.error(`Verifying ${index + 1} of ${wanted.length}: ${finding.title}`);
       finding.verification = await verifyFinding(finding, report, {
         repository: resolve(INVOKED_FROM, args.repository),
-        // A proof takes several installs and test runs, so it gets more time and budget than a review pass.
-        provider: (checkout) => claudeProvider({ checkout, model: args.model, tester: true, timeoutMs: 40 * 60_000, maxBudgetUsd: 5, signal: controller.signal }),
+        provider: prover(args.model, controller.signal),
         signal: controller.signal,
       });
       await mkdir(dirname(destination), { recursive: true });
@@ -355,6 +344,17 @@ async function main(): Promise<void> {
       console.error(`Saved ${finding.verification.verdict} result to ${destination}`);
     }
     process.stdout.write(renderVerification(report.findings));
+    return;
+  }
+  if (args.command === "watch") {
+    const controller = new AbortController();
+    const cancel = () => {
+      if (controller.signal.aborted) process.exit(130);
+      console.error("Stopping the watcher and cleaning up (press Ctrl-C again to force quit)...");
+      controller.abort(new Error("Watch stopped."));
+    };
+    process.on("SIGINT", cancel).on("SIGTERM", cancel);
+    await watch({ ...args, repository: resolve(INVOKED_FROM, args.repository), workspaceRoot: WORKSPACE_ROOT, signal: controller.signal });
     return;
   }
   if (args.command === "post") {
@@ -366,25 +366,18 @@ async function main(): Promise<void> {
     }
     // A report made with `review --pr` names its pull request, so it never lands on another repository's.
     const target = args.target ?? (report as { pullRequest?: string }).pullRequest;
-    const { stdout } = await exec("gh", ["pr", "view", ...(target ? [target] : []), "--json", "number,url,headRefOid"]);
-    const pullRequest = JSON.parse(stdout) as { number: number; url: string; headRefOid: string };
+    const pullRequest = await github.pullRequest(target);
     // Report lines belong to the reviewed commit; on any other head GitHub would misplace or reject them.
     if (pullRequest.headRefOid !== payload.commit_id)
       throw new Error(
         `The report reviewed ${payload.commit_id.slice(0, 12)}, but ${pullRequest.url} is at ${pullRequest.headRefOid.slice(0, 12)}. Review the pull request head again before posting.`,
       );
     if (args.dryRun) {
-      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify({ ...payload, posted: undefined }, null, 2)}\n`);
       return;
     }
-    const temporary = await mkdtemp(join(tmpdir(), "auto-review-post-"));
-    try {
-      const input = join(temporary, "review.json");
-      await writeFile(input, JSON.stringify(payload), "utf8");
-      await exec("gh", ["api", "--method", "POST", `repos/${repositoryName(pullRequest.url)}/pulls/${pullRequest.number}/reviews`, "--input", input]);
-    } finally {
-      await rm(temporary, { recursive: true, force: true });
-    }
+    const { posted, ...body } = payload;
+    await github.postReview(pullRequest, body);
     console.error(`Posted ${payload.comments.length} comment(s) to ${pullRequest.url}`);
     return;
   }

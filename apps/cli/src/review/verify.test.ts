@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ModelProvider } from "./agent.js";
 import type { Finding } from "./findings.js";
-import { judgeProof, parseProof, renderVerification, verifyFinding } from "./verify.js";
+import { judgeProof, parseProof, recheckProofs, renderVerification, savedProof, verifyFinding } from "./verify.js";
 
 const exec = promisify(execFile);
 const finding = { title: "add subtracts", file: "add.js", line: 1 } as Finding;
@@ -105,6 +105,20 @@ describe("verifyFinding", () => {
   it("leaves the source repository untouched", async () => {
     expect(await git("status", "--porcelain")).toBe("");
     expect(await readFile(join(repository, "add.js"), "utf8")).toContain("a - b");
+  });
+
+  it("reruns a saved proof at later commits: fixed once the bug case passes, present while it fails as proven", async () => {
+    const result = await verify(proof, async (checkout) => {
+      await addTest(checkout);
+      await writeFile(join(checkout, "add.js"), fixed);
+    });
+    await writeFile(join(repository, "add.js"), fixed);
+    await git("commit", "--quiet", "--no-gpg-sign", "-am", "fix");
+    const fix = await git("rev-parse", "HEAD");
+    const saved = savedProof(result)!;
+    expect(await recheckProofs(repository, fix, [saved, { ...saved, testPatch: "not a patch" }])).toEqual(["fixed", "unknown"]);
+    expect(await recheckProofs(repository, report.head, [saved])).toEqual(["present"]);
+    expect(savedProof({ ...result, verdict: "untested" })).toBeUndefined();
   });
 
   it("renders the score and the product questions", () => {
