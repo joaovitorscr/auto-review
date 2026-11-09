@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { ModelProvider, ModelResponse } from "./agent.js";
+import { claudeProvider } from "./claude.js";
 import { object } from "./findings.js";
 import type { Finding } from "./findings.js";
 
@@ -232,24 +233,67 @@ async function verifyInCheckout(
 }
 
 /**
- * Proves one finding in a throwaway clone with no remote, so the agent cannot reach the source
- * repository. The clone shares the source's objects and writes nothing back to it.
+ * Runs `use` in a throwaway clone of `repository` at `commit`, with no remote, so an agent or test there
+ * cannot reach the source repository. The clone shares the source's objects and writes nothing back to it.
  */
+export async function withDisposableCheckout<T>(repository: string, commit: string, use: (checkout: string) => Promise<T>) {
+  const temporary = await mkdtemp(join(tmpdir(), "auto-review-verify-"));
+  const checkout = join(temporary, "checkout");
+  try {
+    await exec("git", ["clone", "--quiet", "--shared", "--no-checkout", resolve(repository), checkout]);
+    await exec("git", ["-C", checkout, "remote", "remove", "origin"]);
+    await exec("git", ["-C", checkout, "-c", "core.hooksPath=/dev/null", "checkout", "--quiet", "--detach", commit]);
+    return await use(checkout);
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+/** The Claude Code agent that proves findings. A proof takes several installs and test runs, so it gets more time and budget than a review pass. */
+export const prover = (model: string | undefined, signal?: AbortSignal) => (checkout: string) =>
+  claudeProvider({ checkout, model, tester: true, timeoutMs: 40 * 60_000, maxBudgetUsd: 5, signal });
+
+/** Proves one finding in a disposable checkout of the reviewed head. */
 export async function verifyFinding(
   finding: Finding,
   report: { base: string; head: string },
   options: { repository: string; provider: (checkout: string) => ModelProvider; signal?: AbortSignal },
 ) {
-  const temporary = await mkdtemp(join(tmpdir(), "auto-review-verify-"));
-  const checkout = join(temporary, "checkout");
-  try {
-    await exec("git", ["clone", "--quiet", "--shared", "--no-checkout", resolve(options.repository), checkout]);
-    await exec("git", ["-C", checkout, "remote", "remove", "origin"]);
-    await exec("git", ["-C", checkout, "-c", "core.hooksPath=/dev/null", "checkout", "--quiet", "--detach", report.head]);
-    return await verifyInCheckout(checkout, finding, report, options.provider(checkout), options.signal);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
+  return withDisposableCheckout(options.repository, report.head, (checkout) =>
+    verifyInCheckout(checkout, finding, report, options.provider(checkout), options.signal),
+  );
+}
+
+export type SavedProof = { testPatch: string; setupCommand: string; bugCommand: string; expectedFailure: string };
+
+/** The parts of a proven finding that `recheckProofs` reruns; undefined when no test proved it. */
+export function savedProof(verification: Verification | undefined): SavedProof | undefined {
+  if (verification?.verdict !== "proven" || !verification.test || !verification.testPatch) return undefined;
+  const { setupCommand, bugCommand, expectedFailure } = verification.test;
+  return { testPatch: verification.testPatch, setupCommand, bugCommand, expectedFailure };
+}
+
+/**
+ * Reruns saved proofs at a later commit of the same pull request, one checkout for all of them.
+ * `fixed`: the bug case now passes. `present`: it still fails as proven. `unknown`: the test no longer
+ * applies or fails some other way, which says nothing either way.
+ */
+export async function recheckProofs(repository: string, commit: string, proofs: SavedProof[], signal?: AbortSignal) {
+  return withDisposableCheckout(repository, commit, async (checkout) => {
+    const results: Array<"fixed" | "present" | "unknown"> = [];
+    for (const proof of proofs) {
+      await exec("git", ["-C", checkout, "-c", "core.hooksPath=/dev/null", "checkout", "--quiet", "--force", "--detach", commit]);
+      await exec("git", ["-C", checkout, "clean", "-fdq"]);
+      const patch = join(checkout, "..", "test.patch");
+      await writeFile(patch, proof.testPatch);
+      // The patch, not the saved files, so files the pull request changed since keep their new content.
+      const applied = await run(`git apply --3way ${JSON.stringify(patch)}`, checkout, signal);
+      const setup = applied.code === 0 ? await run(proof.setupCommand || "true", checkout, signal) : applied;
+      const bug = setup.code === 0 ? await run(proof.bugCommand, checkout, signal) : undefined;
+      results.push(bug?.code === 0 ? "fixed" : bug?.code && bug.output.includes(proof.expectedFailure) ? "present" : "unknown");
+    }
+    return results;
+  });
 }
 
 export function renderVerification(findings: ReadonlyArray<Finding & { verification?: Verification }>) {

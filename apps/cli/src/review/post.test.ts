@@ -25,31 +25,48 @@ const report = (overrides: object = {}) =>
 
 describe("reviewPayload", () => {
   it("posts findings at or above the minimum on the reviewed commit", () => {
-    const payload = reviewPayload(report(), "high")!;
+    const payload = reviewPayload(report(), "high");
     expect(payload.commit_id).toBe("abc123");
     expect(payload.comments.map((comment) => comment.line)).toEqual([2, 4]);
     expect(payload.comments[0]).toMatchObject({ path: "src/amount.ts", side: "RIGHT" });
-    expect(payload.comments[0]!.body).toContain("**critical: critical bug**");
+    expect(payload.comments[0]!.body.startsWith("🔴 **Critical** `src/amount.ts:2`\n\n**critical bug**")).toBe(true);
+    expect(payload.comments[1]!.body.startsWith("🟠 **High** `src/amount.ts:4`")).toBe(true);
     expect(payload.comments[0]!.body).toContain(POSTED_MARKER);
-    expect(reviewPayload(report(), "medium")!.comments).toHaveLength(3);
+    expect(reviewPayload(report(), "medium").comments).toHaveLength(3);
   });
 
-  it("posts only proven findings, with the test that proves them", () => {
-    const findings = [finding("high", 1), finding("high", 2, { verdict: "refuted" }), finding("high", 3, { verdict: "untested" })];
-    const payload = reviewPayload(report({ findings }), "high")!;
-    expect(payload.comments.map((comment) => comment.line)).toEqual([1]);
+  it("posts proven findings with their test and untested ones as not proven, but never refuted or deliberate ones", () => {
+    const findings = [
+      finding("high", 1),
+      finding("high", 2, { verdict: "refuted", reason: "It adds." }),
+      finding("medium", 3, { verdict: "untested", reason: "No test runner." }),
+      finding("low", 4, { verdict: "intended", reason: "README says so." }),
+    ];
+    const payload = reviewPayload(report({ findings }), "low");
+    expect(payload.comments.map((comment) => comment.line)).toEqual([1, 3]);
     expect(payload.comments[0]!.body).toContain("`vitest a` fails at this commit");
     expect(payload.comments[0]!.body).toContain("it('fails')");
-    expect(reviewPayload(report({ findings: [{ ...finding("high", 1), verification: undefined }] }), "high")).toBeUndefined();
+    expect(payload.comments[1]!.body).toContain("> ⚠️ **Not proven by a test.** No test runner.");
+    expect(payload.body).toContain("Reviewed `abc123`: 2 finding(s), 1 proven by a test and 1 not proven.");
+    expect(payload.body).toContain("Not posted: 1 refuted by its test and 1 deliberate according to the project.");
   });
 
   it("treats a proof that forced its conditions as low", () => {
     const findings = [finding("high", 1, { ...proven, forced: "A one-second time limit." })];
-    expect(reviewPayload(report({ findings }), "medium")).toBeUndefined();
+    expect(reviewPayload(report({ findings }), "medium").comments).toEqual([]);
+    expect(reviewPayload(report({ findings }), "low").comments[0]!.body).toContain("🟢 **Low**");
   });
 
-  it("returns nothing when no finding qualifies", () => {
-    expect(reviewPayload(report({ findings: [finding("medium", 9)] }), "high")).toBeUndefined();
+  it("posts a clean review so the pull request shows it ran", () => {
+    const payload = reviewPayload(report({ findings: [finding("medium", 9)] }), "high");
+    expect(payload).toMatchObject({ commit_id: "abc123", comments: [] });
+    expect(payload.body).toContain("Reviewed `abc123`: no findings.");
+    expect(payload.body).toContain(POSTED_MARKER);
+  });
+
+  it("refuses a report whose findings were never verified", () => {
+    const findings = [{ ...finding("high", 1), verification: undefined }];
+    expect(() => reviewPayload(report({ findings }), "low")).toThrow("Run verify on this report first");
   });
 
   it("refuses failed reports and working-tree snapshots", () => {

@@ -21,19 +21,19 @@ describe("parseArguments", () => {
 
 describe("post arguments", () => {
   it("reads the report, an optional pull request and the minimum severity", () => {
-    expect(parseArguments(["post", "report.json"])).toEqual({ command: "post", report: "report.json", target: undefined, minimum: "high", dryRun: false });
+    expect(parseArguments(["post", "report.json"])).toEqual({ command: "post", report: "report.json", target: undefined, minimum: "low", dryRun: false });
     expect(parseArguments(["post", "report.json", "12", "--min", "medium", "--dry-run"])).toMatchObject({ target: "12", minimum: "medium", dryRun: true });
   });
 
   it("rejects a missing report and unknown severities", () => {
     expect(() => parseArguments(["post"])).toThrow("saved review report");
-    expect(() => parseArguments(["post", "report.json", "--min", "low"])).toThrow("--min");
+    expect(() => parseArguments(["post", "report.json", "--min", "trivial"])).toThrow("--min");
   });
 });
 
 describe("verify arguments", () => {
   it("reads the report, repository and options", () => {
-    expect(parseArguments(["verify", "report.json", "--repo", "/repo"])).toEqual({ command: "verify", report: "report.json", repository: "/repo", minimum: "high", model: undefined, output: "" });
+    expect(parseArguments(["verify", "report.json", "--repo", "/repo"])).toEqual({ command: "verify", report: "report.json", repository: "/repo", minimum: "low", model: undefined, output: "" });
     expect(parseArguments(["verify", "report.json", "--repo", "/repo", "--min", "medium", "-o", "out.json"])).toMatchObject({ minimum: "medium", output: "out.json" });
   });
 

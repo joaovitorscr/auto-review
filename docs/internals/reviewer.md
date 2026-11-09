@@ -70,9 +70,28 @@ pnpm pr post /tmp/review.verified.json             # post it to pull request 42
 
 `verify` proves findings with tests (see "Verified on real PRs" in evaluation.md). It runs the pull request's code on this machine without prompts, one finding at a time, each capped at $5. It saves after every finding and stops on an agent error, so rerunning on the `.verified.json` file continues where it stopped.
 
-`post` runs no model. It turns a verified report's `proven` findings at `--min` severity or above (default `high`, the Phase D policy; `medium` is the other option) into one GitHub review with event `COMMENT`, one inline comment per finding on the report's head line, each carrying its failing test, through `gh api` under the developer's own account. Without a pull request argument, `gh` picks the one for the current branch. Nothing is posted when no finding qualifies, which includes a report that was never verified.
+`post` runs no model. It turns a verified report into one GitHub review with event `COMMENT`, through `gh api` under the developer's own account. Every finding at `--min` severity or above (default `low`, so all of them; the Phase D policy was `high`) gets an inline comment on the report's head line. Proven findings carry their failing test, and untested ones are marked "Not proven by a test" with the reason. Findings a test refuted, or that the project states as deliberate, get no comment, but the review body counts them. The body always names the reviewed commit, so a review with no findings is still posted and the pull request shows it ran. A report with an unverified finding at `--min` or above is refused. Without a pull request argument, `gh` picks the one for the current branch. `verify` also defaults to `--min low`, so every finding is proven, each capped at $5.
 
-It refuses failed or cancelled reports, working-tree snapshots, and a report whose head is not the pull request's current head commit, since its lines would land on the wrong code. Every comment and the review body end with an `<!-- auto-review -->` marker so a later pass can tell AutoReview's comments from the developer's. Re-checking posted findings after new pushes, and recording whether each was acted on, are not built yet.
+It refuses failed or cancelled reports, working-tree snapshots, and a report whose head is not the pull request's current head commit, since its lines would land on the wrong code. Every comment and the review body end with an `<!-- auto-review -->` marker so a later pass can tell AutoReview's comments from the developer's.
+
+Each inline comment follows Macroscope's layout: a severity and location header (`🟠 **High** \`path:line\``), the title, explanation, scenario and suggested fix, then two collapsed sections. One holds the failing test, and the other holds a prompt to paste into a coding agent, whose definition of done is that test passing.
+
+## Watching a pull request
+
+```sh
+pnpm pr watch 42 --repo ../app              # keep pull request 42 reviewed until it closes
+pnpm pr watch 42 --repo ../app --dry-run    # print one pass's decisions; no agent, nothing posted
+```
+
+There is no GitHub App, because inference runs on the developer's machine through their own agent. `watch` checks the pull request with `gh` every minute and posts as the developer, so it only works while that machine is running. A pass does three things:
+
+- **New head.** It first reruns the saved test behind each open finding at the new head (`recheckProofs`: the test is applied as a patch, then the setup and bug commands run). A bug case that now passes gets a "Fixed in" reply and its thread is resolved. A test that fails some other way, or no longer applies, is left alone. Then it reviews the commits since the last reviewed head, or the whole pull request after a rebase. It drops findings within five lines of an open AutoReview thread in the same file, proves the rest as `verify` does, and posts the review as `post` does, including when it finds nothing. If the head moves during the cycle, nothing is posted and the next pass reviews again.
+- **Replies** on AutoReview's threads are answered by the `--agent` in a read-only checkout of the current head. If the reply shows the finding is wrong, deliberate or fixed, the agent says so and the thread is resolved.
+- **`/auto-review`** at the start of a conversation comment runs a full review of the current head. The comment gets an 👀 reaction, and the posted review is the answer. It is a slash command rather than an `@mention`, so it never notifies a real GitHub user.
+
+Who can trigger it: the `gh` user, plus anyone GitHub reports with `admin`, `maintain` or `write` permission. A failed permission lookup counts as no access. Anyone else who uses the command, or replies on an AutoReview thread, gets one refusal. Bots and AutoReview's own comments (matched by the marker) are ignored. A push is reviewed without a command only when the pull request's author is trusted, because proving a finding runs the pull request's code on this machine. For anyone else's pull request, a trusted person decides by commenting `/auto-review`.
+
+State lives in `outputs/watch/<owner>-<repo>-<number>.json`: the comments already handled, the last attempted and reviewed heads, and the posted findings with their saved tests. A restart neither answers twice nor re-reviews a head. Comments are marked handled before they are acted on, so a crash loses an answer rather than posting it twice. A failed review is not retried until the next push or `/auto-review`. On the first run, existing comments are history and a head that already has an AutoReview review is skipped. Findings posted by a manual `post` are answered in their threads, but are not rechecked on push, because their tests are not in the state file. Resolving a thread needs write access, so on someone else's repository the "Fixed in" reply is posted and the thread stays open. One pass runs at a time, so replies wait while a review and its proofs are running.
 
 ## Agents
 

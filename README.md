@@ -57,6 +57,14 @@ The terminal shows accepted findings. A JSON report is saved under `outputs/` (o
 
 Options: `--head ref` (default `HEAD`), `--repo path`, `--agent codex|claude`, `--model id` to override the agent's configured model, `--dry-run`, and `--output path`. Reports stay on your machine, but the agent sends the collected source to its model provider. Each pass records the model and usage when the agent reports them; Claude Code does, Codex does not.
 
+## Watch a pull request
+
+```sh
+pnpm pr watch 42 --repo ../app
+```
+
+Keeps a pull request reviewed from your machine until it closes, posting under your GitHub account. On each push it reruns the tests behind open findings and resolves the ones that now pass, then reviews the new commits, tries to prove every finding with a test, and posts the review. Proven findings come with their failing test, the rest are marked not proven, and a clean review says so. It answers replies on its own threads, and a comment starting with `/auto-review` runs a full review. Only you and people with write access can trigger it. Pushes are reviewed automatically only when the PR's author has write access, because proving a finding runs the PR's code on your machine. Details are in [the reviewer notes](docs/internals/reviewer.md#watching-a-pull-request).
+
 ## Other commands
 
 ```sh
